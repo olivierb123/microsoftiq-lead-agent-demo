@@ -1,12 +1,16 @@
 # Data & system-of-record inventory
 
-This is the bottom of the stack: before any normalization or UI work, know what data exists, where it actually lives, and which Microsoft "IQ" grounding product maps to it.
+This is the bottom of the stack: before any normalization or UI work, know what data exists, where it actually lives, and which Microsoft "IQ" grounding product maps to it. Each row below has a corresponding raw, source-shaped mock file under `src/data/raw/` — Stage 2 will show what it looks like to normalize each one into a citable, agent-ready record.
 
-| Data domain | System of record | Why that's the system of record | Mapped IQ product | Grounding rationale |
-|---|---|---|---|---|
-| Internal business data | OneLake semantic model (`Sales.FactRevenue` × `Sales.DimRegion`) | Sales/target data already lives here, modeled with the org's real business hierarchy | **Fabric IQ** | Understands the semantic/business model directly — no reinvented joins or metric definitions |
-| Microsoft 365 content | Microsoft Graph (Teams transcripts, Exchange mail) | Conversation/commitment history exists only in M365, not a database | **Work IQ** | Grounds directly in Graph data the org already has, instead of reconstructing it from memory |
-| Public / real-world data | Municipal permit registry (e.g., Austin, TX) | Permit filings are public records held by the municipality, not internal systems | **Web IQ** | Citation-ready public retrieval, not a generic scrape with no provenance |
-| Everything else | *(varies — no single system of record)* | Doesn't fit a purpose-built IQ product | **Foundry IQ** | General-purpose fallback grounding layer |
+| # | Data domain | System of record | Why that's the system of record | Mapped IQ product | Mock file |
+|---|---|---|---|---|---|
+| 1 | CRM — accounts, opportunities, leads, account teams | Dynamics 365 Sales (assumed) | Tells you which accounts are covered, cross-sell/upsell angles, and captures dispatch for next-step lead creation & follow-up | **Fabric IQ** | `src/data/raw/crm.js` |
+| 2 | Sales performance semantic model | Power BI semantic model over Fabric/OneLake | Revenue vs. quota by fiscal year/quarter/month, territory and segment heat, individual seller/team performance | **Fabric IQ** | `src/data/raw/salesPerformance.js` |
+| 3 | FieldForge product content (marketing, sales, technical) | Indexed knowledge store, assumed searchable via Foundry IQ | Positioning, competitive differentiation, and roadmap don't live in a structured system — they're unstructured docs | **Foundry IQ** | `src/data/raw/productDocs.js` |
+| 4 | M365 — calendar, inbox, Teams/IM (sellers & technical sellers) | Microsoft Graph | Scheduling next steps and correlating outreach with buyers requires the org's actual conversation history | **Work IQ** | `src/data/raw/m365.js` |
+| 5 | Public permits/construction records (US, targeted states/counties) | Municipal/county permit registries | Permit filings are public records held by the municipality, not internal systems | **Web IQ** | `src/data/raw/permits.js` |
+| 6 | Climate/disaster risk (storm, flood, fire, earthquake, forecasted risk e.g. El Niño) | NOAA/FEMA/public risk feeds | Public hazard and forecast data, geographically scoped alongside permit activity | **Web IQ** | `src/data/raw/climateRisk.js` |
+| 7 | Product usage/telemetry | Internal telemetry warehouse | Adoption trends signal expansion opportunity or renewal risk that CRM data alone won't show | **Fabric IQ** | `src/data/raw/telemetry.js` |
+| 8 | Support/case history | Support system of record (e.g. Dynamics Customer Service) | Case volume, priority, and CSAT are the leading indicators of account health and renewal risk | **Fabric IQ** | `src/data/raw/supportCases.js` |
 
-These three domains (Fabric IQ, Work IQ, Web IQ) are the ones carried through to Stage 2's normalized console — see `src/data/mockRecords.js`.
+Stage 2's normalized console (`src/data/mockRecords.js`) currently illustrates one domain each for Fabric IQ, Work IQ, and Web IQ; extending it to normalize the remaining domains above is a follow-up, not yet built.
