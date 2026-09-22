@@ -21,17 +21,36 @@ Picking the wrong one — or reaching for a generic web scrape when a purpose-bu
 
 ---
 
-## The three stages
+## The three stages — bottom-up
 
-1. **Mock / seeded dataset** — no real grounding call yet. Prove the agent's logic and UI against a small hand-written sample of permit data. Zero cost, zero external dependency.
-2. **One real integration, narrow scope** — wire up a single real grounding call (Web IQ, for permit/registry-style public data) for one narrow use case. This is the "convincing" stage: proof that real grounded retrieval actually improves answer quality over the mock stage.
-3. **Unified, governed multi-source grounding** — once one integration is proven, generalize to a system that can route across Fabric IQ / Work IQ / Web IQ / Foundry IQ depending on the data domain in question, with consistent citation and governance handling across all of them.
+Grounding is fundamentally a data-architecture problem before it's a UI problem, so this demo builds bottom-up rather than starting from a clickable prototype:
+
+1. **Data & system-of-record inventory** — catalog the real systems of record behind each data domain and which IQ product grounds each one, with rationale. A reviewable artifact, not code.
+2. **Data normalization & agent access** — show what that raw source data looks like once it's normalized into a consistent, citable shape an agent can actually query.
+3. **Data governance & guardrails** — access control, citation enforcement, and audit: the layer that makes multi-source grounding safe to operationalize.
 
 ---
 
+## Stage 1 (built): data & system-of-record inventory
+
+A markdown catalog — [`docs/data-inventory.md`](./docs/data-inventory.md) — mapping each data domain to its concrete system of record and the IQ product that should ground it, with the reasoning for each mapping. This is the foundation the Stage 2 console is built from.
+
+## Stage 2 (built): normalized, agent-grounded console
+
+A static React console (Vite + Tailwind CSS v4, matching lead-agent-demo's toolchain) showing what the Stage 1 inventory looks like once normalized: one example each for Fabric IQ, Work IQ, and Web IQ, reshaped into a consistent, citable record an agent can query and answer from. No real API calls yet; the dataset is hand-written in `src/data/mockRecords.js`.
+
+Run it locally:
+
+```bash
+npm install
+npm run dev
+```
+
+Next: Stage 3 adds governance and guardrails — access control, citation enforcement, and audit — across all three sources.
+
 ## Status
 
-Early planning stage — repo just initialized. Nothing built yet.
+Stage 1 and Stage 2 complete.
 
 ## License
 
