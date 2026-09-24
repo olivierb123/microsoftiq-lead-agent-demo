@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Database, Users, Globe, FileText, ChevronDown, ChevronUp, Quote } from 'lucide-react'
+import { Database, Users, Globe, FileText, ChevronDown, ChevronUp, Quote, Lock } from 'lucide-react'
 import { mockRecords } from './data/mockRecords.js'
 import { matchRecords } from './lib/matchRecords.js'
+import { PERSONAS } from './data/personas.js'
 import { accounts, opportunities, leads } from './data/raw/crm.js'
 import { rows as salesPerformanceRows } from './data/raw/salesPerformance.js'
 import { docs as productDocs } from './data/raw/productDocs.js'
@@ -99,13 +100,14 @@ const DOMAINS = [
   },
 ]
 
-function RecordCard({ record }) {
+function RecordCard({ record, missingDomains }) {
   const [expanded, setExpanded] = useState(false)
   const primaryStyle = IQ_STYLES[record.groundingSources[0]]
+  const isBlocked = missingDomains.length > 0
 
   return (
     <div
-      className={`rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-black/20 transition-colors ${primaryStyle.glow}`}
+      className={`rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-black/20 transition-colors ${isBlocked ? 'opacity-60' : primaryStyle.glow}`}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
@@ -125,35 +127,58 @@ function RecordCard({ record }) {
               </span>
             )
           })}
+          {!isBlocked && (
+            <span
+              className={`rounded-full border px-2.5 py-1 text-[11px] font-mono uppercase tracking-wide ${
+                record.confidence === 'High'
+                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                  : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+              }`}
+            >
+              {record.confidence === 'High' ? 'Verified' : 'Needs verification'}
+            </span>
+          )}
         </div>
       </div>
 
-      <p className="mt-3 text-sm text-slate-200">{record.query}</p>
+      {isBlocked ? (
+        <div className="mt-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-400">
+          <Lock size={14} className="mt-0.5 shrink-0" />
+          <span>
+            Blocked for this persona — requires access to:{' '}
+            <span className="font-mono">{missingDomains.join(', ')}</span>
+          </span>
+        </div>
+      ) : (
+        <>
+          <p className="mt-3 text-sm text-slate-200">{record.query}</p>
 
-      <div className="mt-4 space-y-2">
-        {record.citations.map((citation, i) => (
-          <div
-            key={i}
-            className="flex items-start gap-2 rounded-lg bg-slate-950/60 p-3 text-xs text-slate-400"
-          >
-            <Quote size={13} className="mt-0.5 shrink-0 text-slate-600" />
-            <span className="font-mono">{citation}</span>
+          <div className="mt-4 space-y-2">
+            {record.citations.map((citation, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-2 rounded-lg bg-slate-950/60 p-3 text-xs text-slate-400"
+              >
+                <Quote size={13} className="mt-0.5 shrink-0 text-slate-600" />
+                <span className="font-mono">{citation}</span>
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
 
-      <p className="mt-3 text-sm leading-relaxed text-slate-300">{record.answerPreview}</p>
+          <p className="mt-3 text-sm leading-relaxed text-slate-300">{record.answerPreview}</p>
 
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="mt-4 flex w-full items-center justify-between rounded-lg border border-slate-800 px-3 py-2 text-[11px] font-mono uppercase tracking-wider text-slate-500 transition-colors hover:border-slate-700 hover:text-slate-300"
-      >
-        Why this source?
-        {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-      </button>
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="mt-4 flex w-full items-center justify-between rounded-lg border border-slate-800 px-3 py-2 text-[11px] font-mono uppercase tracking-wider text-slate-500 transition-colors hover:border-slate-700 hover:text-slate-300"
+          >
+            Why this source?
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
 
-      {expanded && (
-        <p className="mt-3 text-xs leading-relaxed text-slate-400">{record.reasoning}</p>
+          {expanded && (
+            <p className="mt-3 text-xs leading-relaxed text-slate-400">{record.reasoning}</p>
+          )}
+        </>
       )}
     </div>
   )
@@ -245,9 +270,32 @@ function DomainSection({ domain }) {
 export default function App() {
   const [tab, setTab] = useState('raw')
   const [question, setQuestion] = useState('')
+  const [activePersona, setActivePersona] = useState(PERSONAS[0])
+  const [auditLog, setAuditLog] = useState([])
 
   const isFiltered = question.trim().length > 0
   const matches = isFiltered ? matchRecords(mockRecords, question) : mockRecords
+
+  const missingDomainsFor = (record) =>
+    record.sourceDomains.filter((d) => !activePersona.allowedDomains.includes(d))
+
+  const handleQueryKeyDown = (e) => {
+    if (e.key !== 'Enter') return
+    const trimmed = question.trim()
+    if (!trimmed) return
+    const blockedCount = matches.filter((r) => missingDomainsFor(r).length > 0).length
+    setAuditLog((log) => [
+      {
+        id: `${Date.now()}-${log.length}`,
+        timestamp: new Date().toLocaleTimeString(),
+        persona: activePersona.label,
+        question: trimmed,
+        matchedCount: matches.length - blockedCount,
+        blockedCount,
+      },
+      ...log,
+    ])
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -258,7 +306,9 @@ export default function App() {
         <p className="mt-1.5 text-sm text-slate-400">
           {tab === 'raw'
             ? 'Stage 1 — raw, source-shaped data as it actually lives in each system of record.'
-            : 'Stage 2 — normalized into agent-ready, citable records. Ask a question below to see which grounded source(s) an agent would retrieve.'}
+            : tab === 'grounded'
+            ? 'Stage 2 — normalized into agent-ready, citable records. Ask a question below to see which grounded source(s) an agent would retrieve.'
+            : `Stage 3 — access control, citation confidence, and a live audit trail. Viewing as ${activePersona.label}; switch personas to see records get blocked or unblocked.`}
         </p>
 
         <div className="mt-5 flex gap-2">
@@ -282,6 +332,35 @@ export default function App() {
           >
             Stage 2: Grounded Console
           </button>
+          <button
+            onClick={() => setTab('governance')}
+            className={`rounded-lg border px-3 py-1.5 text-xs font-mono uppercase tracking-wide transition-colors ${
+              tab === 'governance'
+                ? 'border-slate-600 bg-slate-800 text-slate-100'
+                : 'border-slate-800 text-slate-500 hover:text-slate-300'
+            }`}
+          >
+            Stage 3: Governance
+          </button>
+        </div>
+
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-[11px] font-mono uppercase tracking-wider text-slate-600">
+            Viewing as
+          </span>
+          {PERSONAS.map((persona) => (
+            <button
+              key={persona.id}
+              onClick={() => setActivePersona(persona)}
+              className={`rounded-lg border px-3 py-1 text-xs font-mono uppercase tracking-wide transition-colors ${
+                activePersona.id === persona.id
+                  ? 'border-slate-600 bg-slate-800 text-slate-100'
+                  : 'border-slate-800 text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              {persona.label}
+            </button>
+          ))}
         </div>
       </header>
 
@@ -292,7 +371,7 @@ export default function App() {
               <DomainSection key={domain.name} domain={domain} />
             ))}
           </div>
-        ) : (
+        ) : tab === 'grounded' ? (
           <div>
             <div className="mb-6">
               <div className="flex gap-2">
@@ -300,6 +379,7 @@ export default function App() {
                   type="text"
                   value={question}
                   onChange={(e) => setQuestion(e.target.value)}
+                  onKeyDown={handleQueryKeyDown}
                   placeholder="Ask a question, e.g. &ldquo;Is Coastal Grade & Pave at renewal risk?&rdquo;"
                   className="flex-1 rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:border-slate-600 focus:outline-none"
                 />
@@ -319,13 +399,88 @@ export default function App() {
                     : 'No grounded source matches that yet.'}
                 </p>
               )}
+              <p className="mt-2 text-[11px] text-slate-600">Press Enter to log this query to the Stage 3 audit trail.</p>
             </div>
 
             <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
               {matches.map((record) => (
-                <RecordCard key={record.id} record={record} />
+                <RecordCard key={record.id} record={record} missingDomains={missingDomainsFor(record)} />
               ))}
             </div>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+              <h2 className="text-sm font-semibold text-slate-100">Access control — personas</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Each role is granted access to a subset of the 8 domains from Stage 1. Records that
+                touch a domain outside the active persona's access get blocked on the Stage 2 tab.
+              </p>
+              <div className="mt-4 space-y-3">
+                {PERSONAS.map((persona) => (
+                  <div key={persona.id} className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-slate-200">{persona.label}</span>
+                      <span className="text-[11px] text-slate-500">
+                        {persona.allowedDomains.length} of 8 domains
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500">{persona.description}</p>
+                    <p className="mt-2 text-[11px] font-mono text-slate-400">
+                      {persona.allowedDomains.join(', ')}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
+              <h2 className="text-sm font-semibold text-slate-100">Audit log</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Every query submitted on the Stage 2 tab (press Enter) is recorded here with the
+                active persona and what was matched vs. blocked.
+              </p>
+              {auditLog.length === 0 ? (
+                <p className="mt-4 text-xs italic text-slate-600">
+                  No queries yet — try Stage 2's search box and press Enter.
+                </p>
+              ) : (
+                <div className="mt-4 overflow-x-auto rounded-lg border border-slate-800">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-800 bg-slate-900/80">
+                        <th className="whitespace-nowrap px-3 py-2 font-mono uppercase tracking-wide text-slate-500">
+                          Time
+                        </th>
+                        <th className="whitespace-nowrap px-3 py-2 font-mono uppercase tracking-wide text-slate-500">
+                          Persona
+                        </th>
+                        <th className="whitespace-nowrap px-3 py-2 font-mono uppercase tracking-wide text-slate-500">
+                          Question
+                        </th>
+                        <th className="whitespace-nowrap px-3 py-2 font-mono uppercase tracking-wide text-slate-500">
+                          Matched
+                        </th>
+                        <th className="whitespace-nowrap px-3 py-2 font-mono uppercase tracking-wide text-slate-500">
+                          Blocked
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {auditLog.map((entry) => (
+                        <tr key={entry.id} className="border-b border-slate-900 odd:bg-slate-950/40 last:border-0">
+                          <td className="whitespace-nowrap px-3 py-2 text-slate-400">{entry.timestamp}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-slate-300">{entry.persona}</td>
+                          <td className="px-3 py-2 text-slate-300">{entry.question}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-slate-300">{entry.matchedCount}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-slate-300">{entry.blockedCount}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           </div>
         )}
       </main>

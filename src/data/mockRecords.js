@@ -3,6 +3,8 @@ export const mockRecords = [
     id: 'fabric-iq-sales',
     domain: 'Sales performance (Power BI)',
     groundingSources: ['Fabric IQ'],
+    sourceDomains: ['Sales Performance'],
+    confidence: 'High',
     query: 'Which territories are behind quota this quarter, and by how much?',
     reasoning:
       "This lives entirely inside the org's own structured business data — sales facts, quota, and territory hierarchies already modeled in Fabric/OneLake. Fabric IQ's semantic layer understands that business model directly, so the agent doesn't need to guess table joins or reinvent a metric definition.",
@@ -14,6 +16,8 @@ export const mockRecords = [
     id: 'work-iq-m365',
     domain: 'Microsoft 365 content',
     groundingSources: ['Work IQ'],
+    sourceDomains: ['M365'],
+    confidence: 'High',
     query: 'What did Apex Design & Build last confirm on the Field Ops Expansion pricing follow-up?',
     reasoning:
       "The answer lives in the org's own M365 content — an email thread — not in a structured database or on the public web. Work IQ grounds directly in that Graph data (mail, calendar, Teams) instead of the agent trying to reconstruct it from memory.",
@@ -27,6 +31,8 @@ export const mockRecords = [
     id: 'web-iq-permits',
     domain: 'Public permits',
     groundingSources: ['Web IQ'],
+    sourceDomains: ['Permits'],
+    confidence: 'High',
     query: 'Has Apex Design & Build pulled any new commercial permits recently?',
     reasoning:
       "Municipal permit filings are public real-world data, not something in the org's own systems. Web IQ is built for exactly this — citation-ready retrieval over public/registry data — rather than a generic web scrape with no provenance.",
@@ -38,6 +44,8 @@ export const mockRecords = [
     id: 'crm-cross-sell',
     domain: 'CRM — accounts & opportunities',
     groundingSources: ['Fabric IQ'],
+    sourceDomains: ['CRM'],
+    confidence: 'High',
     query: 'Is there an active cross-sell motion at Summit Ridge Builders, and where does it stand?',
     reasoning:
       "Pipeline stage and ownership live in the CRM system of record, not in a document or inbox. Fabric IQ's semantic layer over that structured data is what can answer this precisely instead of guessing at deal status.",
@@ -51,6 +59,8 @@ export const mockRecords = [
     id: 'foundry-iq-docs',
     domain: 'Product documentation',
     groundingSources: ['Foundry IQ'],
+    sourceDomains: ['Product Docs'],
+    confidence: 'High',
     query: 'How do we position FieldForge against Procore in a competitive deal?',
     reasoning:
       "This lives only in unstructured sales enablement content — no structured system tracks 'how to win a competitive deal.' Foundry IQ's indexed retrieval over that content is built for exactly this kind of grounding.",
@@ -64,6 +74,8 @@ export const mockRecords = [
     id: 'web-iq-climate',
     domain: 'Climate / disaster risk',
     groundingSources: ['Web IQ'],
+    sourceDomains: ['Climate / Disaster Risk'],
+    confidence: 'High',
     query: "What's the storm risk outlook for our Miami-Dade project?",
     reasoning:
       "Public hazard and forecast data isn't tracked in any internal system. Web IQ is built for citation-ready retrieval over exactly this kind of public risk data.",
@@ -75,6 +87,8 @@ export const mockRecords = [
     id: 'fabric-iq-telemetry',
     domain: 'Product telemetry',
     groundingSources: ['Fabric IQ'],
+    sourceDomains: ['Telemetry'],
+    confidence: 'High',
     query: "How is Summit Ridge Builders' product adoption trending?",
     reasoning:
       'Usage and adoption trend data lives in the internal telemetry warehouse, not in CRM. Fabric IQ is what actually understands trend-over-time here.',
@@ -88,6 +102,8 @@ export const mockRecords = [
     id: 'fabric-iq-support',
     domain: 'Support case history',
     groundingSources: ['Fabric IQ'],
+    sourceDomains: ['Support Cases'],
+    confidence: 'High',
     query: "What was the outcome of Apex Design & Build's last support case?",
     reasoning:
       "Case history lives in the support system of record, not CRM. Fabric IQ grounds directly in that structured case data instead of the agent guessing at resolution status.",
@@ -100,6 +116,8 @@ export const mockRecords = [
     id: 'composite-renewal-risk',
     domain: 'Cross-source: renewal risk',
     groundingSources: ['Fabric IQ'],
+    sourceDomains: ['CRM', 'Telemetry', 'Support Cases'],
+    confidence: 'High',
     query: 'Is Coastal Grade & Pave at renewal risk, and why?',
     reasoning:
       'No single source tells this story — CRM alone shows a normal-looking account, telemetry alone shows a usage dip, and the support system alone shows one open ticket. Joining all three on `accountId` is what turns three unremarkable signals into a clear renewal-risk call.',
@@ -115,6 +133,8 @@ export const mockRecords = [
     id: 'composite-upsell-context',
     domain: 'Cross-source: upsell + real-world risk',
     groundingSources: ['Fabric IQ', 'Web IQ'],
+    sourceDomains: ['CRM', 'Permits', 'Climate / Disaster Risk'],
+    confidence: 'Needs verification',
     query: 'Should we prioritize the Apex Design & Build upsell, and is there anything to flag?',
     reasoning:
       'CRM alone tells you the deal stage. Joining it with the permit filing (a fuzzy, name-matched join — permits carry no CRM foreign key) and a geographic climate-risk lookup (state + county match) turns "deal in Negotiation" into the real-world context behind why now, and what to watch for.',

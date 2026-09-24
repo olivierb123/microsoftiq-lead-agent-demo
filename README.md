@@ -46,11 +46,17 @@ npm install
 npm run dev
 ```
 
-Next: Stage 3 adds governance and guardrails — access control, citation enforcement, and audit — across all sources.
+## Stage 3 (built): data governance & guardrails
+
+The layer that makes multi-source grounding safe to operationalize, documented in [`docs/data-governance.md`](./docs/data-governance.md):
+
+- **Access control** — an interactive persona switcher (Sales Rep, Customer Success, Executive) in the console header. Each role is granted a subset of the 8 domains, and any record that draws on a domain outside the active persona's access is fully blocked on the "Stage 2: Grounded Console" tab — including the 2 composite records, which flip between blocked and visible depending on the persona.
+- **Citation / confidence enforcement** — every record is flagged `Verified` or `Needs verification`, derived directly from the hard-vs-fuzzy join classification in `data-relationships.md`. Only the permit-to-CRM composite (a fuzzy name match) is flagged `Needs verification`.
+- **Audit log** — the "Stage 3: Governance" tab records every query submitted on Stage 2 (press Enter), live, in-session: persona, question, and how many results were matched vs. blocked. No backend, so it resets on refresh — same "simulate honestly" approach as Stage 2's matcher.
 
 ## Status
 
-Stage 1 and Stage 2 complete.
+Stage 1, Stage 2, and Stage 3 complete.
 
 ## License
 
