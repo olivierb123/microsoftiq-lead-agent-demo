@@ -33,11 +33,11 @@ Grounding is fundamentally a data-architecture problem before it's a UI problem,
 
 ## Stage 1 (built): data & system-of-record inventory
 
-A markdown catalog — [`docs/data-inventory.md`](./docs/data-inventory.md) — mapping each data domain to its concrete system of record and the IQ product that should ground it, with the reasoning for each mapping. This is the foundation the Stage 2 console is built from.
+A markdown catalog — [`docs/data-inventory.md`](./docs/data-inventory.md) — mapping each of 8 data domains to its concrete system of record and the IQ product that should ground it, with the reasoning for each mapping, plus [`docs/data-relationships.md`](./docs/data-relationships.md) documenting how those domains actually join to each other. The "Stage 1: Raw Data" tab in the console renders each domain's raw, source-shaped mock data so the inventory can be validated visually, not just read as a table.
 
 ## Stage 2 (built): normalized, agent-grounded console
 
-A static React console (Vite + Tailwind CSS v4, matching lead-agent-demo's toolchain) showing what the Stage 1 inventory looks like once normalized: one example each for Fabric IQ, Work IQ, and Web IQ, reshaped into a consistent, citable record an agent can query and answer from. No real API calls yet; the dataset is hand-written in `src/data/mockRecords.js`.
+A static React console (Vite + Tailwind CSS v4, matching lead-agent-demo's toolchain) showing what the Stage 1 inventory looks like once normalized: all 8 domains reshaped into consistent, citable records an agent can query and answer from, plus 2 composite records that join across domains (e.g. renewal risk assembled from CRM + telemetry + support cases on `accountId`) to show why grounding across sources — not just within one — is where the real value is. A query input on the "Stage 2: Grounded Console" tab keyword-matches a typed question against the records to simulate what an agent's retrieval step would surface. No real API calls or retrieval yet; the dataset and matcher are hand-written in `src/data/mockRecords.js` and `src/lib/matchRecords.js`.
 
 Run it locally:
 
@@ -46,7 +46,7 @@ npm install
 npm run dev
 ```
 
-Next: Stage 3 adds governance and guardrails — access control, citation enforcement, and audit — across all three sources.
+Next: Stage 3 adds governance and guardrails — access control, citation enforcement, and audit — across all sources.
 
 ## Status
 

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Database, Users, Globe, FileText, ChevronDown, ChevronUp, Quote } from 'lucide-react'
 import { mockRecords } from './data/mockRecords.js'
+import { matchRecords } from './lib/matchRecords.js'
 import { accounts, opportunities, leads } from './data/raw/crm.js'
 import { rows as salesPerformanceRows } from './data/raw/salesPerformance.js'
 import { docs as productDocs } from './data/raw/productDocs.js'
@@ -100,30 +101,45 @@ const DOMAINS = [
 
 function RecordCard({ record }) {
   const [expanded, setExpanded] = useState(false)
-  const style = IQ_STYLES[record.groundingSource]
-  const Icon = style.icon
+  const primaryStyle = IQ_STYLES[record.groundingSources[0]]
 
   return (
     <div
-      className={`rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-black/20 transition-colors ${style.glow}`}
+      className={`rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-black/20 transition-colors ${primaryStyle.glow}`}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
           {record.domain}
         </span>
-        <span
-          className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-mono uppercase tracking-wide ${style.badge}`}
-        >
-          <Icon size={12} strokeWidth={2.5} />
-          {record.groundingSource}
-        </span>
+        <div className="flex flex-wrap justify-end gap-1.5">
+          {record.groundingSources.map((source) => {
+            const style = IQ_STYLES[source]
+            const Icon = style.icon
+            return (
+              <span
+                key={source}
+                className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-mono uppercase tracking-wide ${style.badge}`}
+              >
+                <Icon size={12} strokeWidth={2.5} />
+                {source}
+              </span>
+            )
+          })}
+        </div>
       </div>
 
       <p className="mt-3 text-sm text-slate-200">{record.query}</p>
 
-      <div className="mt-4 flex items-start gap-2 rounded-lg bg-slate-950/60 p-3 text-xs text-slate-400">
-        <Quote size={13} className="mt-0.5 shrink-0 text-slate-600" />
-        <span className="font-mono">{record.citation}</span>
+      <div className="mt-4 space-y-2">
+        {record.citations.map((citation, i) => (
+          <div
+            key={i}
+            className="flex items-start gap-2 rounded-lg bg-slate-950/60 p-3 text-xs text-slate-400"
+          >
+            <Quote size={13} className="mt-0.5 shrink-0 text-slate-600" />
+            <span className="font-mono">{citation}</span>
+          </div>
+        ))}
       </div>
 
       <p className="mt-3 text-sm leading-relaxed text-slate-300">{record.answerPreview}</p>
@@ -228,6 +244,10 @@ function DomainSection({ domain }) {
 
 export default function App() {
   const [tab, setTab] = useState('raw')
+  const [question, setQuestion] = useState('')
+
+  const isFiltered = question.trim().length > 0
+  const matches = isFiltered ? matchRecords(mockRecords, question) : mockRecords
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
@@ -238,7 +258,7 @@ export default function App() {
         <p className="mt-1.5 text-sm text-slate-400">
           {tab === 'raw'
             ? 'Stage 1 — raw, source-shaped data as it actually lives in each system of record.'
-            : 'Stage 2 — three data domains, normalized into agent-ready records, each grounded with a citation and a rationale.'}
+            : 'Stage 2 — normalized into agent-ready, citable records. Ask a question below to see which grounded source(s) an agent would retrieve.'}
         </p>
 
         <div className="mt-5 flex gap-2">
@@ -273,10 +293,39 @@ export default function App() {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-            {mockRecords.map((record) => (
-              <RecordCard key={record.id} record={record} />
-            ))}
+          <div>
+            <div className="mb-6">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  placeholder="Ask a question, e.g. &ldquo;Is Coastal Grade & Pave at renewal risk?&rdquo;"
+                  className="flex-1 rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:border-slate-600 focus:outline-none"
+                />
+                {isFiltered && (
+                  <button
+                    onClick={() => setQuestion('')}
+                    className="rounded-lg border border-slate-800 px-3 py-2 text-xs font-mono uppercase tracking-wide text-slate-500 transition-colors hover:border-slate-700 hover:text-slate-300"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {isFiltered && (
+                <p className="mt-2 text-xs text-slate-500">
+                  {matches.length > 0
+                    ? `Matched ${matches.length} of ${mockRecords.length} grounded records`
+                    : 'No grounded source matches that yet.'}
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+              {matches.map((record) => (
+                <RecordCard key={record.id} record={record} />
+              ))}
+            </div>
           </div>
         )}
       </main>

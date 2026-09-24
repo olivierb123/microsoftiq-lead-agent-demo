@@ -13,6 +13,6 @@ This is the bottom of the stack: before any normalization or UI work, know what 
 | 7 | Product usage/telemetry | Internal telemetry warehouse | Adoption trends signal expansion opportunity or renewal risk that CRM data alone won't show | **Fabric IQ** | `src/data/raw/telemetry.js` |
 | 8 | Support/case history | Support system of record (e.g. Dynamics Customer Service) | Case volume, priority, and CSAT are the leading indicators of account health and renewal risk | **Fabric IQ** | `src/data/raw/supportCases.js` |
 
-Stage 2's normalized console (`src/data/mockRecords.js`) currently illustrates one domain each for Fabric IQ, Work IQ, and Web IQ; extending it to normalize the remaining domains above is a follow-up, not yet built.
+Stage 2's normalized console (`src/data/mockRecords.js`) now covers all 8 domains above individually, plus 2 composite records that join across domains (e.g. renewal risk from CRM + telemetry + support cases on `accountId`) — the console also has a query input that keyword-matches a typed question against the grounded records, simulating what an agent's retrieval step would surface.
 
 See [`data-relationships.md`](./data-relationships.md) for how these 8 domains classify (structured/semi-structured/unstructured) and join to each other.
