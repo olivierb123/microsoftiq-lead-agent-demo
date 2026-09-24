@@ -14,3 +14,5 @@ This is the bottom of the stack: before any normalization or UI work, know what 
 | 8 | Support/case history | Support system of record (e.g. Dynamics Customer Service) | Case volume, priority, and CSAT are the leading indicators of account health and renewal risk | **Fabric IQ** | `src/data/raw/supportCases.js` |
 
 Stage 2's normalized console (`src/data/mockRecords.js`) currently illustrates one domain each for Fabric IQ, Work IQ, and Web IQ; extending it to normalize the remaining domains above is a follow-up, not yet built.
+
+See [`data-relationships.md`](./data-relationships.md) for how these 8 domains classify (structured/semi-structured/unstructured) and join to each other.
