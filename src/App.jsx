@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Database, Users, Globe, FileText, ChevronDown, ChevronUp, Quote, Lock } from 'lucide-react'
+import { Database, Users, Globe, FileText, ChevronDown, ChevronUp, Quote, Lock, Zap } from 'lucide-react'
 import { mockRecords } from './data/mockRecords.js'
 import { matchRecords } from './lib/matchRecords.js'
+import { runFoundryIQQuery } from './agentClient.js'
 import { PERSONAS } from './data/personas.js'
 import { accounts, opportunities, leads } from './data/raw/crm.js'
 import { rows as salesPerformanceRows } from './data/raw/salesPerformance.js'
@@ -100,14 +101,19 @@ const DOMAINS = [
   },
 ]
 
-function RecordCard({ record, missingDomains }) {
+function RecordCard({ record, missingDomains, live }) {
   const [expanded, setExpanded] = useState(false)
   const primaryStyle = IQ_STYLES[record.groundingSources[0]]
   const isBlocked = missingDomains.length > 0
 
+  const citations = live ? live.citations : record.citations
+  const answerText = live ? live.text || (live.status === 'streaming' ? 'Thinking…' : '') : record.answerPreview
+
   return (
     <div
-      className={`rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-black/20 transition-colors ${isBlocked ? 'opacity-60' : primaryStyle.glow}`}
+      className={`rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-black/20 transition-colors ${
+        isBlocked ? 'opacity-60' : primaryStyle.glow
+      } ${live ? 'ring-1 ring-fuchsia-500/40' : ''}`}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
@@ -127,17 +133,23 @@ function RecordCard({ record, missingDomains }) {
               </span>
             )
           })}
-          {!isBlocked && (
-            <span
-              className={`rounded-full border px-2.5 py-1 text-[11px] font-mono uppercase tracking-wide ${
-                record.confidence === 'High'
-                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                  : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
-              }`}
-            >
-              {record.confidence === 'High' ? 'Verified' : 'Needs verification'}
-            </span>
-          )}
+          {!isBlocked &&
+            (live ? (
+              <span className="flex items-center gap-1.5 rounded-full border border-fuchsia-500/40 bg-fuchsia-500/10 px-2.5 py-1 text-[11px] font-mono uppercase tracking-wide text-fuchsia-300">
+                <Zap size={12} strokeWidth={2.5} />
+                {live.status === 'streaming' ? 'Live · streaming' : live.status === 'error' ? 'Live · error' : 'Live'}
+              </span>
+            ) : (
+              <span
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-mono uppercase tracking-wide ${
+                  record.confidence === 'High'
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                    : 'border-amber-500/30 bg-amber-500/10 text-amber-400'
+                }`}
+              >
+                {record.confidence === 'High' ? 'Verified' : 'Needs verification'}
+              </span>
+            ))}
         </div>
       </div>
 
@@ -154,7 +166,7 @@ function RecordCard({ record, missingDomains }) {
           <p className="mt-3 text-sm text-slate-200">{record.query}</p>
 
           <div className="mt-4 space-y-2">
-            {record.citations.map((citation, i) => (
+            {citations.map((citation, i) => (
               <div
                 key={i}
                 className="flex items-start gap-2 rounded-lg bg-slate-950/60 p-3 text-xs text-slate-400"
@@ -163,25 +175,48 @@ function RecordCard({ record, missingDomains }) {
                 <span className="font-mono">{citation}</span>
               </div>
             ))}
+            {live && citations.length === 0 && live.status === 'streaming' && (
+              <p className="text-xs italic text-slate-600">Retrieving citations…</p>
+            )}
           </div>
 
-          <p className="mt-3 text-sm leading-relaxed text-slate-300">{record.answerPreview}</p>
-
-          <button
-            onClick={() => setExpanded((v) => !v)}
-            className="mt-4 flex w-full items-center justify-between rounded-lg border border-slate-800 px-3 py-2 text-[11px] font-mono uppercase tracking-wider text-slate-500 transition-colors hover:border-slate-700 hover:text-slate-300"
+          <p
+            className={`mt-3 text-sm leading-relaxed ${
+              live?.status === 'error' ? 'text-red-400' : 'text-slate-300'
+            }`}
           >
-            Why this source?
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
+            {answerText}
+          </p>
 
-          {expanded && (
-            <p className="mt-3 text-xs leading-relaxed text-slate-400">{record.reasoning}</p>
+          {!live && (
+            <>
+              <button
+                onClick={() => setExpanded((v) => !v)}
+                className="mt-4 flex w-full items-center justify-between rounded-lg border border-slate-800 px-3 py-2 text-[11px] font-mono uppercase tracking-wider text-slate-500 transition-colors hover:border-slate-700 hover:text-slate-300"
+              >
+                Why this source?
+                {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </button>
+
+              {expanded && (
+                <p className="mt-3 text-xs leading-relaxed text-slate-400">{record.reasoning}</p>
+              )}
+            </>
           )}
         </>
       )}
     </div>
   )
+}
+
+function extractDocCitations(text) {
+  const ids = [...new Set(text.match(/DOC-\d+/g) || [])]
+  return ids.map((id) => {
+    const doc = productDocs.find((d) => d.docId === id)
+    return doc
+      ? `Foundry IQ index: ${doc.docId} — ${doc.title} (updated ${doc.lastUpdated})`
+      : `Foundry IQ index: ${id}`
+  })
 }
 
 function DataTable({ rows }) {
@@ -272,6 +307,8 @@ export default function App() {
   const [question, setQuestion] = useState('')
   const [activePersona, setActivePersona] = useState(PERSONAS[0])
   const [auditLog, setAuditLog] = useState([])
+  const [liveMode, setLiveMode] = useState(false)
+  const [liveResult, setLiveResult] = useState(null)
 
   const isFiltered = question.trim().length > 0
   const matches = isFiltered ? matchRecords(mockRecords, question) : mockRecords
@@ -295,6 +332,20 @@ export default function App() {
       },
       ...log,
     ])
+
+    if (liveMode) {
+      const routesToProductDocs = matches.some((r) => r.id === 'foundry-iq-docs')
+      if (routesToProductDocs) {
+        setLiveResult({ status: 'streaming', text: '', citations: [] })
+        runFoundryIQQuery(trimmed, {
+          onText: (text) => setLiveResult({ status: 'streaming', text, citations: extractDocCitations(text) }),
+          onDone: () => setLiveResult((r) => (r ? { ...r, status: 'done' } : r)),
+          onError: (message) => setLiveResult({ status: 'error', text: message, citations: [] }),
+        })
+      } else {
+        setLiveResult(null)
+      }
+    }
   }
 
   return (
@@ -383,9 +434,26 @@ export default function App() {
                   placeholder="Ask a question, e.g. &ldquo;Is Coastal Grade & Pave at renewal risk?&rdquo;"
                   className="flex-1 rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:border-slate-600 focus:outline-none"
                 />
+                <button
+                  onClick={() => {
+                    setLiveMode((v) => !v)
+                    setLiveResult(null)
+                  }}
+                  className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-mono uppercase tracking-wide transition-colors ${
+                    liveMode
+                      ? 'border-fuchsia-500/50 bg-fuchsia-500/10 text-fuchsia-300'
+                      : 'border-slate-800 text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  <Zap size={12} strokeWidth={2.5} />
+                  Live: Foundry IQ
+                </button>
                 {isFiltered && (
                   <button
-                    onClick={() => setQuestion('')}
+                    onClick={() => {
+                      setQuestion('')
+                      setLiveResult(null)
+                    }}
                     className="rounded-lg border border-slate-800 px-3 py-2 text-xs font-mono uppercase tracking-wide text-slate-500 transition-colors hover:border-slate-700 hover:text-slate-300"
                   >
                     Clear
@@ -400,11 +468,22 @@ export default function App() {
                 </p>
               )}
               <p className="mt-2 text-[11px] text-slate-600">Press Enter to log this query to the Stage 3 audit trail.</p>
+              {liveMode && (
+                <p className="mt-1 text-[11px] text-slate-600">
+                  Live mode calls a real, deployed Foundry IQ agent grounded on Azure AI Search for Product Docs
+                  questions — everything else on this tab still uses the Stage 2 mock matcher.
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
               {matches.map((record) => (
-                <RecordCard key={record.id} record={record} missingDomains={missingDomainsFor(record)} />
+                <RecordCard
+                  key={record.id}
+                  record={record}
+                  missingDomains={missingDomainsFor(record)}
+                  live={liveMode && record.id === 'foundry-iq-docs' ? liveResult : null}
+                />
               ))}
             </div>
           </div>
