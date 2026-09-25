@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 import requests
-from azure.identity import ClientSecretCredential
+from azure.identity import DefaultAzureCredential
 
 POWERBI_TOKEN_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
 TABLE_NAME = "sales_performance"
@@ -11,16 +11,14 @@ TABLE_NAME = "sales_performance"
 WORKSPACE_ID = os.environ["AZURE_POWERBI_WORKSPACE_ID"]
 DATASET_ID = os.environ["AZURE_POWERBI_DATASET_ID"]
 
-# Power BI's REST API does not recognize Foundry's auto-provisioned per-agent
-# "Agent Identity" (a newer Entra identity type) as an authorizable principal —
-# calls made with DefaultAzureCredential's implicit identity are rejected with a
-# flat 401 regardless of workspace/dataset RBAC. A dedicated, classic Entra app
-# registration (a standard service principal) is required instead.
-_credential = ClientSecretCredential(
-    tenant_id=os.environ["AZURE_POWERBI_SP_TENANT_ID"],
-    client_id=os.environ["AZURE_POWERBI_SP_CLIENT_ID"],
-    client_secret=os.environ["AZURE_POWERBI_SP_CLIENT_SECRET"],
-)
+# DefaultAzureCredential resolves to the deployed agent's own Instance Identity
+# Principal ID. An earlier attempt at this got a flat 401 here, but that was
+# against a Direct Lake (Lakehouse-backed) semantic model — its OneLake/
+# Lakehouse ACL layer was the actual blocker, not the identity type. Once the
+# dataset was rebuilt as a plain Import-mode semantic model (see docs/
+# azure-implementation.md), the same identity authenticates fine with just
+# workspace Contributor — no separate service principal/client secret needed.
+_credential = DefaultAzureCredential()
 
 
 def _dax_string_literal(value: str) -> str:
