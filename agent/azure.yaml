@@ -37,5 +37,31 @@ services:
         protocols:
             - protocol: responses
               version: 2.0.0
+    fabriciq-sales-agent:
+        project: .
+        host: azure.ai.agent
+        language: python
+        uses:
+            - ai-project
+        codeConfiguration:
+            dependencyResolution: remote_build
+            entryPoint: fabric_server.py
+            runtime: python_3_13
+        container:
+            resources:
+                cpu: "0.5"
+                memory: 1Gi
+        env:
+            AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+            AZURE_POWERBI_WORKSPACE_ID: ${AZURE_POWERBI_WORKSPACE_ID}
+            AZURE_POWERBI_DATASET_ID: ${AZURE_POWERBI_DATASET_ID}
+            AZURE_POWERBI_SP_TENANT_ID: ${AZURE_POWERBI_SP_TENANT_ID}
+            AZURE_POWERBI_SP_CLIENT_ID: ${AZURE_POWERBI_SP_CLIENT_ID}
+            AZURE_POWERBI_SP_CLIENT_SECRET: ${AZURE_POWERBI_SP_CLIENT_SECRET}
+        kind: hosted
+        name: fabriciq-sales-agent
+        protocols:
+            - protocol: responses
+              version: 2.0.0
 infra:
     provider: microsoft.foundry

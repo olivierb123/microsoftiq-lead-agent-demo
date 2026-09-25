@@ -54,18 +54,19 @@ The layer that makes multi-source grounding safe to operationalize, documented i
 - **Citation / confidence enforcement** — every record is flagged `Verified` or `Needs verification`, derived directly from the hard-vs-fuzzy join classification in `data-relationships.md`. Only the permit-to-CRM composite (a fuzzy name match) is flagged `Needs verification`.
 - **Audit log** — the "Stage 3: Governance" tab records every query submitted on Stage 2 (press Enter), live, in-session: persona, question, and how many results were matched vs. blocked. No backend, so it resets on refresh — same "simulate honestly" approach as Stage 2's matcher.
 
-## Stage 4 (in progress): real Azure grounding
+## Stage 4/5 (in progress): real Azure grounding
 
-The first three stages are entirely mock data and a hand-written matcher. Stage 4 makes one of the four IQ products real, documented in [`docs/azure-implementation.md`](./docs/azure-implementation.md):
+The first three stages are entirely mock data and a hand-written matcher. Stages 4 and 5 make two of the four IQ products real, documented in [`docs/azure-implementation.md`](./docs/azure-implementation.md):
 
 - **Foundry IQ (built and deployed)** — a second, independent Foundry Hosted Agent, grounded on a real Azure AI Search index (`product-docs`, seeded from `src/data/raw/productDocs.js` via `scripts/seed_search_index.py`) through Agent Framework's native `AzureAISearchContextProvider`. A **"Live: Foundry IQ"** toggle on the "Stage 2: Grounded Console" tab routes Product-Docs-domain questions to this real agent — streamed answer, real citations — while every other domain keeps using the Stage 2 mock matcher.
-- **Fabric IQ, Work IQ, Web IQ** — documented architecturally (what real service, what it would take to stand up) but not built in this pass.
+- **Fabric IQ, Sales Performance domain (built and deployed)** — a third Foundry Hosted Agent, grounded on a real Power BI/Fabric semantic model built from `src/data/raw/salesPerformance.js` and queried live via the Power BI Execute Queries REST API. Same **"Live"** toggle pattern on the Sales Performance record; CRM, Telemetry, Support Cases, and the cross-domain composite record stay on the Stage 2 mock matcher.
+- **Work IQ, Web IQ, and the rest of Fabric IQ** — documented architecturally (what real service, what it would take to stand up) but not built in this pass.
 
-Running it locally requires the agent to be deployed and a `.env` pointing at it (see `.env.example`); `npm run dev` then proxies live requests through a dev-only auth layer in `vite.config.js`.
+Running it locally requires the agents to be deployed and a `.env` pointing at them (see `.env.example`); `npm run dev` then proxies live requests through a dev-only auth layer in `vite.config.js`.
 
 ## Status
 
-Stage 1, Stage 2, and Stage 3 complete. Stage 4 in progress (Foundry IQ real integration built; Fabric IQ, Work IQ, Web IQ documented only).
+Stage 1, Stage 2, and Stage 3 complete. Stage 4/5 in progress (Foundry IQ and Fabric IQ's Sales Performance domain built and deployed; the rest of Fabric IQ plus Work IQ and Web IQ documented only).
 
 ## License
 

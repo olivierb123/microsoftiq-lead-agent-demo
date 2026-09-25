@@ -4,3 +4,4 @@ agent-framework-foundry-hosting
 agent-framework-azure-ai-search
 azure-identity
 python-dotenv
+requests

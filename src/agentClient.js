@@ -1,9 +1,7 @@
-// Thin client for the real Foundry IQ docs agent (Azure AI Search grounded),
-// proxied through the local Vite dev server at /api/foundry-iq/responses
-// (see vite.config.js) so the AAD bearer token never reaches the browser.
+// Thin client for the real Foundry Hosted Agents (Foundry IQ docs, Fabric IQ
+// sales performance), each proxied through the local Vite dev server (see
+// vite.config.js) so the AAD bearer token never reaches the browser.
 // Adapted from lead-agent-demo/src/agentClient.js's Responses-protocol SSE parser.
-
-const AGENT_PROXY_PATH = '/api/foundry-iq/responses'
 
 async function* parseSSEStream(response) {
   const reader = response.body.getReader()
@@ -39,7 +37,7 @@ async function* parseSSEStream(response) {
 }
 
 /**
- * Run one turn of the Foundry IQ docs agent.
+ * Run one turn against a deployed Foundry Hosted Agent, proxied at `proxyPath`.
  *
  * callbacks:
  *   - onText(fullText): streamed assistant text, called with the accumulated
@@ -47,11 +45,11 @@ async function* parseSSEStream(response) {
  *   - onDone(): called when the run completes successfully
  *   - onError(message): called on failure
  */
-export async function runFoundryIQQuery(question, callbacks = {}) {
+async function runIQQuery(proxyPath, question, callbacks = {}) {
   const { onText = () => {}, onDone = () => {}, onError = () => {} } = callbacks
 
   try {
-    const response = await fetch(AGENT_PROXY_PATH, {
+    const response = await fetch(proxyPath, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ input: question, stream: true }),
@@ -86,4 +84,14 @@ export async function runFoundryIQQuery(question, callbacks = {}) {
   } catch (err) {
     onError(err.message || String(err))
   }
+}
+
+/** Run one turn of the Foundry IQ docs agent (Azure AI Search grounded). */
+export function runFoundryIQQuery(question, callbacks = {}) {
+  return runIQQuery('/api/foundry-iq/responses', question, callbacks)
+}
+
+/** Run one turn of the Fabric IQ sales performance agent (live semantic model grounded). */
+export function runFabricIQQuery(question, callbacks = {}) {
+  return runIQQuery('/api/fabric-iq/responses', question, callbacks)
 }

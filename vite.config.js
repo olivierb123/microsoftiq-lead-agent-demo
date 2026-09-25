@@ -7,11 +7,13 @@ const TOKEN_SCOPE = 'https://ai.azure.com/.default'
 
 // Dev-only proxy: mints an AAD token via the developer's own `az login`
 // session (DefaultAzureCredential, Node-side — never bundled to the client)
-// and forwards to the deployed Foundry IQ docs agent. This project has no
+// and forwards to a deployed Foundry Hosted Agent. This project has no
 // public hosting yet (Stages 1-3 are npm-run-dev-and-commit only), so a
 // local proxy is enough — no Azure Function/service-principal needed, unlike
-// lead-agent-demo's publicly-hosted Static Web App.
-function foundryIQProxyPlugin(agentUrl) {
+// lead-agent-demo's publicly-hosted Static Web App. Shared by both the
+// Foundry IQ docs agent and the Fabric IQ sales agent — same Responses-
+// protocol endpoint shape, same token scope, just a different upstream URL.
+function iqAgentProxyPlugin(name, routePath, agentUrl) {
   let cachedToken = null
   const credential = new DefaultAzureCredential()
 
@@ -24,9 +26,9 @@ function foundryIQProxyPlugin(agentUrl) {
   }
 
   return {
-    name: 'foundry-iq-proxy',
+    name,
     configureServer(server) {
-      server.middlewares.use('/api/foundry-iq/responses', async (req, res) => {
+      server.middlewares.use(routePath, async (req, res) => {
         if (req.method !== 'POST') {
           res.statusCode = 405
           res.end('Method not allowed')
@@ -34,7 +36,7 @@ function foundryIQProxyPlugin(agentUrl) {
         }
         if (!agentUrl) {
           res.statusCode = 500
-          res.end(JSON.stringify({ error: 'FOUNDRY_IQ_AGENT_URL is not configured' }))
+          res.end(JSON.stringify({ error: `${name}: agent URL is not configured` }))
           return
         }
 
@@ -55,7 +57,7 @@ function foundryIQProxyPlugin(agentUrl) {
 
           if (!upstream.ok) {
             const errText = await upstream.text()
-            console.error(`[foundry-iq-proxy] upstream ${upstream.status}: ${errText}`)
+            console.error(`[${name}] upstream ${upstream.status}: ${errText}`)
             res.statusCode = upstream.status
             res.setHeader('Content-Type', upstream.headers.get('content-type') ?? 'application/json')
             res.end(errText)
@@ -67,7 +69,7 @@ function foundryIQProxyPlugin(agentUrl) {
           for await (const chunk of upstream.body) res.write(chunk)
           res.end()
         } catch (err) {
-          console.error('[foundry-iq-proxy] error:', err)
+          console.error(`[${name}] error:`, err)
           res.statusCode = 502
           res.end(JSON.stringify({ error: String(err && err.message ? err.message : err) }))
         }
@@ -79,6 +81,11 @@ function foundryIQProxyPlugin(agentUrl) {
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {
-    plugins: [react(), tailwindcss(), foundryIQProxyPlugin(env.FOUNDRY_IQ_AGENT_URL)],
+    plugins: [
+      react(),
+      tailwindcss(),
+      iqAgentProxyPlugin('foundry-iq-proxy', '/api/foundry-iq/responses', env.FOUNDRY_IQ_AGENT_URL),
+      iqAgentProxyPlugin('fabric-iq-proxy', '/api/fabric-iq/responses', env.FABRIC_IQ_AGENT_URL),
+    ],
   }
 })

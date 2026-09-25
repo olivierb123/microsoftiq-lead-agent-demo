@@ -1,19 +1,23 @@
-# Real Azure implementation — Foundry IQ
+# Real Azure implementation — Foundry IQ & Fabric IQ
 
-Stages 1–3 proved the *shape* of grounding — data mapped to the right IQ product, normalized into citable records, access-controlled and audited — entirely with mock data and a hand-written keyword matcher. Stage 4 makes one of those four IQ products real: an actual deployed agent, grounded on real Azure infrastructure, answering real questions with real citations. The other three are documented here architecturally but not built, per the "stage it, one real integration first" scoping decision.
+Stages 1–3 proved the *shape* of grounding — data mapped to the right IQ product, normalized into citable records, access-controlled and audited — entirely with mock data and a hand-written keyword matcher. Stage 4 made one of those four IQ products real: an actual deployed agent, grounded on real Azure infrastructure, answering real questions with real citations. Stage 5 made a second one real: Fabric IQ, scoped to the Sales Performance domain, grounded on an actual Fabric semantic model. Work IQ and Web IQ, and the rest of Fabric IQ's domains (CRM, Telemetry, Support Cases, and the cross-domain composite), remain documented here architecturally but not built.
 
-## Why Foundry IQ first
+## Why Foundry IQ first, Fabric IQ second
 
 | Data domain | Mapped IQ product | Status |
 |---|---|---|
-| CRM, Sales performance, Telemetry, Support cases | **Fabric IQ** | Documented only |
+| Sales performance | **Fabric IQ** | **Built and deployed** |
+| CRM, Telemetry, Support cases | **Fabric IQ** | Documented only (mock matcher) |
 | M365 (calendar, inbox, Teams) | **Work IQ** | Documented only |
 | Permits, Climate/disaster risk | **Web IQ** | Documented only |
 | Product Docs | **Foundry IQ** | **Built and deployed** |
 
 Foundry IQ (via Azure AI Search) was the cheapest real thing to stand up: no external tenant/consent flow, no Fabric workspace or semantic model, no Bing Grounding resource returning uncontrolled live results — just an Azure AI Search resource, an index, and documents. It also reuses this repo's own `src/data/raw/productDocs.js` directly as seed content, so there was no new data to invent.
 
+Fabric IQ was scoped to Sales Performance only rather than all four of its mapped domains — building a real, multi-table semantic model with relationships is meaningfully more Fabric modeling work than one table, and mirrors the "prove the pattern with one domain first" precedent Foundry IQ set. CRM, Telemetry, Support Cases, and the cross-domain composite record stay on the Stage 2 mock matcher.
+
 ## What's built: Foundry IQ docs agent
+
 
 A second, independent Foundry Hosted Agent — separate from [`lead-agent-demo`](https://github.com/olivierb123/lead-agent-demo)'s already-deployed agent, with its own Foundry project, model deployment, and Azure AI Search resource. It follows the same deployment pattern `lead-agent-demo` proved out (`agent_framework.Agent` + `FoundryChatClient`, `agent_framework_foundry_hosting.ResponsesHostServer`, `azd ai agent init/provision/deploy`), so it exposes the same Responses-protocol `/responses` SSE endpoint the frontend already knows how to consume.
 
@@ -26,12 +30,29 @@ A second, independent Foundry Hosted Agent — separate from [`lead-agent-demo`]
 ## Gotchas hit during provisioning
 
 - **Two distinct identities per hosted agent.** A deployed Foundry Hosted Agent has both the parent Cognitive Services account's identity and its own separate Instance Identity Principal ID. Role assignments (e.g. granting the agent read access to the Azure AI Search index) need to target the *agent's* instance identity, not the parent account — granting the wrong one silently doesn't work rather than erroring clearly.
-- **Env var injection isn't automatic.** `azd ai agent init` doesn't auto-populate an `env:` block for a hosted agent's deployment — it has to be added explicitly to `azure.yaml` (see `agent/azure.yaml`'s `env:` block under the `foundryiq-docs-agent` service) or the container never receives `AZURE_SEARCH_ENDPOINT`, `AZURE_SEARCH_INDEX_NAME`, etc. at runtime, even though they're present in the local `.env`.
+- **Env var injection isn't automatic.** `azd ai agent init` doesn't auto-populate an `env:` block for a hosted agent's deployment — it has to be added explicitly to `azure.yaml` (see `agent/azure.yaml`'s `env:` block under the `foundryiq-docs-agent` service) or the container never receives `AZURE_SEARCH_ENDPOINT`, `AZURE_SEARCH_INDEX_NAME`, etc. at runtime, even though they're present in the local `.env`. This isn't quite enough on its own, either — `azure.yaml`'s `${VAR}` substitution reads from **azd's own environment store**, not the local `.env` file, so new env vars also need `azd env set KEY value` before a deploy will inject them.
+
+## What's built: Fabric IQ sales agent
+
+A third Foundry Hosted Agent, `fabriciq-sales-agent`, sharing the same Foundry project and model deployment as the docs agent but with its own entry point, instructions, and tool (`agent/fabric_agent.py`, `agent/fabric_server.py`). It answers Sales Performance questions grounded on a real Fabric/Power BI semantic model — not the Stage 2 mock matcher.
+
+**Retrieval**: unlike Foundry IQ's native `AzureAISearchContextProvider`, Agent Framework has no hosted tool for Fabric/Power BI, so `agent/fabric_tools.py`'s `query_sales_performance(territory, month)` is a custom function tool that builds a DAX query (`EVALUATE sales_performance` or a `FILTER(...)`-wrapped variant when args are given) and calls it against the Power BI **Execute Queries** REST API (`POST .../datasets/{id}/executeQueries`). The agent's instructions mandate a fixed inline citation ("Source: Fabric IQ semantic model — sales_performance table, live query") since there's only one source table here, unlike Foundry IQ's per-doc citation parsing.
+
+**The semantic model**: a Power BI **Import-mode** semantic model built directly from a CSV export of `src/data/raw/salesPerformance.js` (via `scripts/export_sales_performance_csv.py`), uploaded through the Fabric portal's "+ New item → Semantic model" flow — not a Fabric Lakehouse-backed Direct Lake model. See the Direct Lake gotcha below for why.
+
+**Auth**: `ClientSecretCredential` against a dedicated classic Entra app registration (`AZURE_POWERBI_SP_*` env vars), not `DefaultAzureCredential`'s implicit agent identity — see the first gotcha below for why. Locally this can instead ride the developer's own `az login` session for testing.
+
+## Gotchas hit building Fabric IQ
+
+- **Power BI doesn't recognize Foundry's Agent Identity as an authorizable principal.** Calls made with `DefaultAzureCredential`'s implicit per-agent identity (a newer Entra identity type) are flatly rejected with a 401, regardless of workspace/dataset RBAC. A dedicated, classic Entra app registration (a standard service principal with its own client secret) is required instead — granted Contributor on the workspace via its Entra *object ID* (not its app/client ID, for `principalType=App` role assignments).
+- **Direct Lake semantic models were unreliable for service-principal (app-only) auth, and eventually the whole model.** The Lakehouse's auto-generated default semantic model (Direct Lake mode) worked fine for delegated (interactive user) auth but returned a 401 for the service principal despite identical, fully-verified RBAC at every layer — workspace role, dataset permission, Lakehouse direct-access ACL, and OneLake Security role membership. It later broke entirely, failing with `"Failed to open the MSOLAP connection"` even for the previously-working dev account, traced to the workspace's Fabric capacity going inactive/detached. Rather than keep fighting Direct Lake's platform quirks, the fix was to sidestep it: delete the Lakehouse-backed default semantic model and the Lakehouse itself, and build a plain **Import-mode** semantic model directly from a CSV upload. Import mode only needs classic workspace role + dataset permission — no Lakehouse-specific ACL layer — and the service principal worked immediately once the model was rebuilt this way.
+- **Deleting a Fabric item doesn't auto-regenerate it.** Deleting a Lakehouse's default semantic model via the Fabric REST API, then reopening the Lakehouse in the portal, does not cause Fabric to recreate it — a new semantic model has to be created explicitly.
 
 ## What's documented but not built
 
-### Fabric IQ — CRM, sales performance, telemetry, support cases
-A Fabric Data Agent grounded over a Lakehouse/semantic model in Microsoft Fabric/OneLake. These four domains are already structured/tabular (Dynamics 365 Sales, a Power BI semantic model, an internal telemetry warehouse, a support system of record) — Fabric IQ's value is a business-model-aware semantic layer over that data, not raw table access. Building this for real would mean provisioning a Fabric workspace, publishing a semantic model over mock-equivalent tables, and connecting a Fabric Data Agent — out of scope for this pass.
+### Fabric IQ — CRM, telemetry, support cases
+The same Fabric Data Agent pattern proven out for Sales Performance, extended to the other three tabular domains (Dynamics 365 Sales, an internal telemetry warehouse, a support system of record) as one shared semantic model with proper relationships across tables — meaningfully more Fabric modeling work than a single flat table, and out of scope for this pass.
+
 
 ### Work IQ — M365 (calendar, inbox, Teams)
 A connector grounded directly in Microsoft Graph data the org already has. Making this real requires an actual M365 tenant, Entra app registration with delegated Graph consent (`Calendars.Read`, `Mail.Read`, `Chat.Read`, etc.), and a real user's mailbox/calendar/Teams history to query against — meaningfully more setup than the other three IQ products, and the reason it wasn't picked for the first real integration.
@@ -42,3 +63,5 @@ Grounding with Bing Search, built for citation-ready web retrieval rather than a
 ## Verification
 
 The deployed Foundry IQ docs agent was smoke-tested directly (curl, through the deployed `/responses` endpoint) with the canonical "How do we position FieldForge against Procore?" question and returned a real answer citing `DOC-2` (the competitive battlecard), and the same question was verified end-to-end through the browser via the "Live: Foundry IQ" toggle.
+
+The deployed Fabric IQ sales agent was smoke-tested the same way (`azd ai agent invoke fabriciq-sales-agent`) with "Which territories are behind quota this quarter, and by how much?" and returned a real, correctly-computed answer (West and South territories, with accurate variance percentages) grounded in the live semantic model, with the fixed citation. Also verified end-to-end through the browser via the "Live: Fabric IQ" toggle on the Sales Performance record.

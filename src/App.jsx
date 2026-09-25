@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Database, Users, Globe, FileText, ChevronDown, ChevronUp, Quote, Lock, Zap } from 'lucide-react'
 import { mockRecords } from './data/mockRecords.js'
 import { matchRecords } from './lib/matchRecords.js'
-import { runFoundryIQQuery } from './agentClient.js'
+import { runFoundryIQQuery, runFabricIQQuery } from './agentClient.js'
 import { PERSONAS } from './data/personas.js'
 import { accounts, opportunities, leads } from './data/raw/crm.js'
 import { rows as salesPerformanceRows } from './data/raw/salesPerformance.js'
@@ -219,6 +219,23 @@ function extractDocCitations(text) {
   })
 }
 
+// Records with a real, deployed agent behind them (vs. the Stage 2 mock
+// matcher). Each entry knows how to run its own agent and how to surface
+// citations while streaming vs. once the response is done — Foundry IQ can
+// name a specific doc mid-stream, but Fabric IQ has only one possible source,
+// so there's nothing to parse: just show the fixed citation once it's done.
+const LIVE_IQ_RECORDS = {
+  'foundry-iq-docs': {
+    run: runFoundryIQQuery,
+    citationsForText: extractDocCitations,
+  },
+  'fabric-iq-sales': {
+    run: runFabricIQQuery,
+    citationsForText: () => [],
+    doneCitations: ['Fabric IQ semantic model: sales_performance table — live query'],
+  },
+}
+
 function DataTable({ rows }) {
   if (!rows || rows.length === 0) {
     return <p className="text-xs italic text-slate-600">No records.</p>
@@ -308,6 +325,7 @@ export default function App() {
   const [activePersona, setActivePersona] = useState(PERSONAS[0])
   const [auditLog, setAuditLog] = useState([])
   const [liveMode, setLiveMode] = useState(false)
+  const [liveRecordId, setLiveRecordId] = useState(null)
   const [liveResult, setLiveResult] = useState(null)
 
   const isFiltered = question.trim().length > 0
@@ -334,15 +352,19 @@ export default function App() {
     ])
 
     if (liveMode) {
-      const routesToProductDocs = matches.some((r) => r.id === 'foundry-iq-docs')
-      if (routesToProductDocs) {
+      const liveRecord = matches.find((r) => LIVE_IQ_RECORDS[r.id])
+      if (liveRecord) {
+        const config = LIVE_IQ_RECORDS[liveRecord.id]
+        setLiveRecordId(liveRecord.id)
         setLiveResult({ status: 'streaming', text: '', citations: [] })
-        runFoundryIQQuery(trimmed, {
-          onText: (text) => setLiveResult({ status: 'streaming', text, citations: extractDocCitations(text) }),
-          onDone: () => setLiveResult((r) => (r ? { ...r, status: 'done' } : r)),
+        config.run(trimmed, {
+          onText: (text) => setLiveResult({ status: 'streaming', text, citations: config.citationsForText(text) }),
+          onDone: () =>
+            setLiveResult((r) => (r ? { ...r, status: 'done', citations: config.doneCitations ?? r.citations } : r)),
           onError: (message) => setLiveResult({ status: 'error', text: message, citations: [] }),
         })
       } else {
+        setLiveRecordId(null)
         setLiveResult(null)
       }
     }
@@ -437,6 +459,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     setLiveMode((v) => !v)
+                    setLiveRecordId(null)
                     setLiveResult(null)
                   }}
                   className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-mono uppercase tracking-wide transition-colors ${
@@ -446,7 +469,7 @@ export default function App() {
                   }`}
                 >
                   <Zap size={12} strokeWidth={2.5} />
-                  Live: Foundry IQ
+                  Live: Foundry IQ + Fabric IQ
                 </button>
                 {isFiltered && (
                   <button
@@ -470,8 +493,9 @@ export default function App() {
               <p className="mt-2 text-[11px] text-slate-600">Press Enter to log this query to the Stage 3 audit trail.</p>
               {liveMode && (
                 <p className="mt-1 text-[11px] text-slate-600">
-                  Live mode calls a real, deployed Foundry IQ agent grounded on Azure AI Search for Product Docs
-                  questions — everything else on this tab still uses the Stage 2 mock matcher.
+                  Live mode calls real, deployed agents — Foundry IQ (Azure AI Search) for Product Docs and Fabric
+                  IQ (a live semantic model) for Sales Performance — everything else on this tab still uses the
+                  Stage 2 mock matcher.
                 </p>
               )}
             </div>
@@ -482,7 +506,7 @@ export default function App() {
                   key={record.id}
                   record={record}
                   missingDomains={missingDomainsFor(record)}
-                  live={liveMode && record.id === 'foundry-iq-docs' ? liveResult : null}
+                  live={liveMode && record.id === liveRecordId ? liveResult : null}
                 />
               ))}
             </div>
