@@ -95,3 +95,8 @@ export function runFoundryIQQuery(question, callbacks = {}) {
 export function runFabricIQQuery(question, callbacks = {}) {
   return runIQQuery('/api/fabric-iq/responses', question, callbacks)
 }
+
+/** Run one turn of the Web IQ climate/disaster-risk agent (live web search grounded). */
+export function runWebIQQuery(question, callbacks = {}) {
+  return runIQQuery('/api/web-iq/responses', question, callbacks)
+}

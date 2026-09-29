@@ -1,20 +1,23 @@
-# Real Azure implementation — Foundry IQ & Fabric IQ
+# Real Azure implementation — Foundry IQ, Fabric IQ & Web IQ
 
-Stages 1–3 proved the *shape* of grounding — data mapped to the right IQ product, normalized into citable records, access-controlled and audited — entirely with mock data and a hand-written keyword matcher. Stage 4 made one of those four IQ products real: an actual deployed agent, grounded on real Azure infrastructure, answering real questions with real citations. Stage 5 made a second one real: Fabric IQ, scoped to the Sales Performance domain, grounded on an actual Fabric semantic model. Work IQ and Web IQ, and the rest of Fabric IQ's domains (CRM, Telemetry, Support Cases, and the cross-domain composite), remain documented here architecturally but not built.
+Stages 1–3 proved the *shape* of grounding — data mapped to the right IQ product, normalized into citable records, access-controlled and audited — entirely with mock data and a hand-written keyword matcher. Stage 4 made one of those four IQ products real: an actual deployed agent, grounded on real Azure infrastructure, answering real questions with real citations. Stage 5 made a second one real: Fabric IQ, scoped to the Sales Performance domain, grounded on an actual Fabric semantic model. Stage 6 made a third real: Web IQ, scoped to the Climate/Disaster Risk domain, grounded on Microsoft's real, live Web IQ web-search API. Work IQ, the rest of Fabric IQ's domains (CRM, Telemetry, Support Cases, and the cross-domain composite), and Web IQ's Permits domain remain documented here architecturally but not built.
 
-## Why Foundry IQ first, Fabric IQ second
+## Why Foundry IQ first, Fabric IQ second, Web IQ third
 
 | Data domain | Mapped IQ product | Status |
 |---|---|---|
 | Sales performance | **Fabric IQ** | **Built and deployed** |
 | CRM, Telemetry, Support cases | **Fabric IQ** | Documented only (mock matcher) |
 | M365 (calendar, inbox, Teams) | **Work IQ** | Documented only |
-| Permits, Climate/disaster risk | **Web IQ** | Documented only |
+| Climate/disaster risk | **Web IQ** | **Built and deployed** |
+| Permits | **Web IQ** | Documented only (mock matcher) |
 | Product Docs | **Foundry IQ** | **Built and deployed** |
 
 Foundry IQ (via Azure AI Search) was the cheapest real thing to stand up: no external tenant/consent flow, no Fabric workspace or semantic model, no Bing Grounding resource returning uncontrolled live results — just an Azure AI Search resource, an index, and documents. It also reuses this repo's own `src/data/raw/productDocs.js` directly as seed content, so there was no new data to invent.
 
 Fabric IQ was scoped to Sales Performance only rather than all four of its mapped domains — building a real, multi-table semantic model with relationships is meaningfully more Fabric modeling work than one table, and mirrors the "prove the pattern with one domain first" precedent Foundry IQ set. CRM, Telemetry, Support Cases, and the cross-domain composite record stay on the Stage 2 mock matcher.
+
+Web IQ was scoped to Climate/Disaster Risk only, not Permits, matching the same "one domain first" precedent, and became available once real API access was confirmed (Microsoft's Web IQ product — a live web-grounding API for LLMs/agents — happens to share its exact name with this demo's own IQ-product taxonomy). Unlike Fabric IQ's Azure AD/RBAC saga, this integration's auth is a plain API key header — no tenant, no workspace, no role assignment to arrange.
 
 ## What's built: Foundry IQ docs agent
 
@@ -48,6 +51,19 @@ A third Foundry Hosted Agent, `fabriciq-sales-agent`, sharing the same Foundry p
 - **The Agent Identity 401 turned out to be a Direct Lake artifact, not a categorical rejection.** The original assumption — that Power BI simply doesn't recognize Foundry's Agent Identity as an authorizable principal — was wrong. Once the dataset was rebuilt as Import-mode, re-testing `DefaultAzureCredential` (the agent's own Instance Identity, already granted Contributor on the workspace from the earlier attempt) against it succeeded immediately, with no code change beyond swapping the credential class. The classic service principal (`ClientSecretCredential` + `AZURE_POWERBI_SP_*` vars) was removed once this was confirmed — one less secret to manage and rotate.
 - **Deleting a Fabric item doesn't auto-regenerate it.** Deleting a Lakehouse's default semantic model via the Fabric REST API, then reopening the Lakehouse in the portal, does not cause Fabric to recreate it — a new semantic model has to be created explicitly.
 
+## What's built: Web IQ climate agent
+
+A fourth Foundry Hosted Agent, `webiq-climate-agent`, sharing the same Foundry project and model deployment as the other two but with its own entry point, instructions, and tool (`agent/webiq_agent.py`, `agent/webiq_server.py`). It answers Climate/Disaster Risk questions grounded on Microsoft's real, live **Web IQ** product (`webiq.microsoft.ai`) — not the Stage 2 mock matcher.
+
+**Retrieval**: like Fabric IQ, there's no native Agent Framework hosted tool for this service, so `agent/webiq_tools.py`'s `search_climate_risk(query, max_results=5)` is a custom function tool that calls Web IQ's `POST /search/web` endpoint (`https://api.microsoft.ai/v3/search/web`) directly with `requests`, appending a fixed `site:noaa.gov OR site:fema.gov OR site:weather.gov` scope onto the model's query so results stay anchored to authoritative hazard sources rather than an arbitrary web page. It returns each result's `title`, `url`, `domain` (falling back to the URL's host if the API omits it), `content`, `lastUpdatedAt` (falling back to `crawledAt`), and `sourceQuality`. The agent's instructions mandate a fixed inline citation format — `Source: <domain> — "<title>" (updated <lastUpdatedAt>)` — parsed out of the streamed response text by `extractWebCitations` in `src/App.jsx`, giving genuine per-query citations from live search results rather than a single fixed string.
+
+**Auth**: a plain API key in the `x-apikey` request header (`WEBIQ_API_KEY`) — Web IQ also supports an Entra bearer-token option, but the API key is simpler and needs no app registration, RBAC grant, or workspace access of any kind. Meaningfully less setup than Fabric IQ's Azure AD saga.
+
+## Gotchas hit building Web IQ
+
+- **The product's own documentation pages were unreliable; the OpenAPI spec was the only authoritative source.** Web IQ's human-readable API-reference and Authentication doc pages returned marketing/FAQ content instead of technical detail when fetched (the product is in limited enterprise access). The real, structured contract — endpoints, auth schemes, request/response field names — only came from the OpenAPI JSON spec at `https://webiq.microsoft.ai/documentation/openapi.json`, linked from `https://webiq.microsoft.ai/llms.txt`.
+- **Some documented response fields (`domain`, `lastUpdatedAt`) aren't always present.** A raw test call against the live API returned results with `title`/`url`/`content`/`crawledAt` but no `domain` or `lastUpdatedAt` on every result, despite both being in the OpenAPI schema. `webiq_tools.py` derives `domain` from the URL's host as a fallback and falls back to `crawledAt` for the date, so citations stay populated either way.
+
 ## What's documented but not built
 
 ### Fabric IQ — CRM, telemetry, support cases
@@ -57,11 +73,13 @@ The same Fabric Data Agent pattern proven out for Sales Performance, extended to
 ### Work IQ — M365 (calendar, inbox, Teams)
 A connector grounded directly in Microsoft Graph data the org already has. Making this real requires an actual M365 tenant, Entra app registration with delegated Graph consent (`Calendars.Read`, `Mail.Read`, `Chat.Read`, etc.), and a real user's mailbox/calendar/Teams history to query against — meaningfully more setup than the other three IQ products, and the reason it wasn't picked for the first real integration.
 
-### Web IQ — permits, climate/disaster risk
-Grounding with Bing Search, built for citation-ready web retrieval rather than a search-results page. This is the natural second real integration — it's cheap to provision (a Bing Grounding resource, no external tenant needed) but was deprioritized behind Foundry IQ because its results are live and uncontrolled, making it a noisier first proof than a fixed, indexed document set.
+### Web IQ — permits
+The same Web IQ web-search pattern proven out for Climate/Disaster Risk, scoped instead toward municipal permit registries and filings — out of scope for this pass, matching the "prove the pattern with one domain first" precedent.
 
 ## Verification
 
 The deployed Foundry IQ docs agent was smoke-tested directly (curl, through the deployed `/responses` endpoint) with the canonical "How do we position FieldForge against Procore?" question and returned a real answer citing `DOC-2` (the competitive battlecard), and the same question was verified end-to-end through the browser via the "Live: Foundry IQ" toggle.
 
 The deployed Fabric IQ sales agent was smoke-tested the same way (`azd ai agent invoke fabriciq-sales-agent`) with "Which territories are behind quota this quarter, and by how much?" and returned a real, correctly-computed answer (West and South territories, with accurate variance percentages) grounded in the live semantic model, with the fixed citation. Also verified end-to-end through the browser via the "Live: Fabric IQ" toggle on the Sales Performance record.
+
+The Web IQ climate agent's underlying tool was smoke-tested with a raw `curl` call against the live `/search/web` endpoint before any agent code was written, confirming the key and contract both work (real NOAA hurricane-advisory results for a Miami-Dade storm-risk query). The deployed agent itself was then smoke-tested via `azd ai agent invoke webiq-climate-agent` with "What's the storm risk outlook for our Miami-Dade project?" and verified end-to-end through the browser via the "Live: Web IQ" toggle on the Climate/Disaster Risk record.

@@ -86,6 +86,7 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       iqAgentProxyPlugin('foundry-iq-proxy', '/api/foundry-iq/responses', env.FOUNDRY_IQ_AGENT_URL),
       iqAgentProxyPlugin('fabric-iq-proxy', '/api/fabric-iq/responses', env.FABRIC_IQ_AGENT_URL),
+      iqAgentProxyPlugin('web-iq-proxy', '/api/web-iq/responses', env.WEBIQ_AGENT_URL),
     ],
   }
 })

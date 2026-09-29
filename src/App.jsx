@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Database, Users, Globe, FileText, ChevronDown, ChevronUp, Quote, Lock, Zap } from 'lucide-react'
 import { mockRecords } from './data/mockRecords.js'
 import { matchRecords } from './lib/matchRecords.js'
-import { runFoundryIQQuery, runFabricIQQuery } from './agentClient.js'
+import { runFoundryIQQuery, runFabricIQQuery, runWebIQQuery } from './agentClient.js'
 import { PERSONAS } from './data/personas.js'
 import { accounts, opportunities, leads } from './data/raw/crm.js'
 import { rows as salesPerformanceRows } from './data/raw/salesPerformance.js'
@@ -219,6 +219,15 @@ function extractDocCitations(text) {
   })
 }
 
+// Web IQ's instructions mandate a fixed inline format: Source: <domain> —
+// "<title>" (updated <lastUpdatedAt>). Parsed straight out of the streamed
+// text, same idea as extractDocCitations but for a live web-search source
+// instead of a fixed internal doc set.
+function extractWebCitations(text) {
+  const matches = [...text.matchAll(/Source:\s*([^\n—]+?)\s*—\s*"([^"]+)"\s*\(updated ([^)]+)\)/g)]
+  return [...new Set(matches.map((m) => `Web IQ: ${m[1].trim()} — "${m[2].trim()}" (updated ${m[3].trim()})`))]
+}
+
 // Records with a real, deployed agent behind them (vs. the Stage 2 mock
 // matcher). Each entry knows how to run its own agent and how to surface
 // citations while streaming vs. once the response is done — Foundry IQ can
@@ -233,6 +242,10 @@ const LIVE_IQ_RECORDS = {
     run: runFabricIQQuery,
     citationsForText: () => [],
     doneCitations: ['Fabric IQ semantic model: sales_performance table — live query'],
+  },
+  'web-iq-climate': {
+    run: runWebIQQuery,
+    citationsForText: extractWebCitations,
   },
 }
 
@@ -469,7 +482,7 @@ export default function App() {
                   }`}
                 >
                   <Zap size={12} strokeWidth={2.5} />
-                  Live: Foundry IQ + Fabric IQ
+                  Live: Foundry IQ + Fabric IQ + Web IQ
                 </button>
                 {isFiltered && (
                   <button
@@ -493,9 +506,9 @@ export default function App() {
               <p className="mt-2 text-[11px] text-slate-600">Press Enter to log this query to the Stage 3 audit trail.</p>
               {liveMode && (
                 <p className="mt-1 text-[11px] text-slate-600">
-                  Live mode calls real, deployed agents — Foundry IQ (Azure AI Search) for Product Docs and Fabric
-                  IQ (a live semantic model) for Sales Performance — everything else on this tab still uses the
-                  Stage 2 mock matcher.
+                  Live mode calls real, deployed agents — Foundry IQ (Azure AI Search) for Product Docs, Fabric
+                  IQ (a live semantic model) for Sales Performance, and Web IQ (live web search grounding) for
+                  Climate/Disaster Risk — everything else on this tab still uses the Stage 2 mock matcher.
                 </p>
               )}
             </div>
