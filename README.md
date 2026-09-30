@@ -54,21 +54,22 @@ The layer that makes multi-source grounding safe to operationalize, documented i
 - **Citation / confidence enforcement** — every record is flagged `Verified` or `Needs verification`, derived directly from the hard-vs-fuzzy join classification in `data-relationships.md`. Only the permit-to-CRM composite (a fuzzy name match) is flagged `Needs verification`.
 - **Audit log** — the "Stage 3: Governance" tab records every query submitted on Stage 2 (press Enter), live, in-session: persona, question, and how many results were matched vs. blocked. No backend, so it resets on refresh — same "simulate honestly" approach as Stage 2's matcher.
 
-## Stage 4/5/6 (in progress): real Azure grounding
+## Stage 4/5/6/7 (in progress): real Azure grounding
 
-The first three stages are entirely mock data and a hand-written matcher. Stages 4, 5, and 6 make three of the four IQ products real, documented in [`docs/azure-implementation.md`](./docs/azure-implementation.md):
+The first three stages are entirely mock data and a hand-written matcher. Stages 4, 5, and 6 make three of the four IQ products real, and Stage 7 combines them, all documented in [`docs/azure-implementation.md`](./docs/azure-implementation.md):
 
 - **Foundry IQ (built and deployed)** — a second, independent Foundry Hosted Agent, grounded on a real Azure AI Search index (`product-docs`, seeded from `src/data/raw/productDocs.js` via `scripts/seed_search_index.py`) through Agent Framework's native `AzureAISearchContextProvider`. A **"Live: Foundry IQ"** toggle on the "Stage 2: Grounded Console" tab routes Product-Docs-domain questions to this real agent — streamed answer, real citations — while every other domain keeps using the Stage 2 mock matcher.
 - **Fabric IQ, Sales Performance domain (built and deployed)** — grounded on a real Power BI/Fabric semantic model built from `src/data/raw/salesPerformance.js`, consumed via a published Fabric Data agent. Foundry's native `fabric_dataagent_preview` tool turned out to have a server-side connection-resolution bug, so this agent's tool instead calls the Fabric Data agent's own MCP endpoint directly, authenticating as a dedicated service principal rather than the signed-in user. Same **"Live"** toggle pattern on the Sales Performance record; CRM, Telemetry, Support Cases, and the cross-domain composite record stay on the Stage 2 mock matcher.
 - **Real sign-in (MSAL)** — the "Live" toggle authenticates a real Entra ID user in the browser (`@azure/msal-browser`) rather than running every request as whichever developer has an `az login` session open; `vite.config.js`'s dev proxy forwards that user's own token, falling back to the developer's session only when no one is signed in.
 - **Web IQ, Climate/Disaster Risk domain (built and deployed)** — a fourth Foundry Hosted Agent, grounded on Microsoft's real **Web IQ** live web-grounding API (`webiq.microsoft.ai`), searched via a custom function tool scoped toward authoritative hazard sources (NOAA, FEMA, NWS). Same **"Live"** toggle pattern on the Climate/Disaster Risk record, with real per-query citations (source domain, title, last-updated date) parsed from the live search results; Permits stays on the Stage 2 mock matcher.
+- **Cross-IQ synergy — fan-out + live synthesis (built)** — one typed question ("Where should we focus new lead generation — factoring in territory quota performance, regional storm risk, and our competitive edge against Procore?") fans out concurrently to all three live agents above, then a **fourth** Foundry Hosted Agent (`synergy-agent`, no tools) synthesizes their three real answers into one attributed takeaway — a genuine live model call, not hardcoded prose. Three sub-panels (one per source agent) plus a "Synthesized takeaway" panel render on the composite record once all three sources finish.
 - **Work IQ, and the rest of Fabric IQ** — documented architecturally (what real service, what it would take to stand up) but not built in this pass.
 
 Running it locally requires the agents to be deployed and a `.env` pointing at them (see `.env.example`), plus MSAL config (`VITE_MSAL_CLIENT_ID`/`VITE_MSAL_TENANT_ID`) for real sign-in; `npm run dev` then proxies live requests through a dev-only auth layer in `vite.config.js`.
 
 ## Status
 
-Stage 1, Stage 2, and Stage 3 complete. Stage 4/5/6 in progress (Foundry IQ, Fabric IQ's Sales Performance domain, and Web IQ's Climate/Disaster Risk domain built and deployed, all gated behind real MSAL sign-in; the rest of Fabric IQ plus Work IQ documented only).
+Stage 1, Stage 2, and Stage 3 complete. Stage 4/5/6/7 in progress (Foundry IQ, Fabric IQ's Sales Performance domain, Web IQ's Climate/Disaster Risk domain, and the cross-IQ synergy fan-out/synthesis agent built and deployed, all gated behind real MSAL sign-in; the rest of Fabric IQ plus Work IQ documented only).
 
 ## License
 

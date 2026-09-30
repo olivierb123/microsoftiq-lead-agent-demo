@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Database, Users, Globe, FileText, ChevronDown, ChevronUp, Quote, Lock, Zap, LogIn, LogOut } from 'lucide-react'
 import { mockRecords } from './data/mockRecords.js'
 import { matchRecords } from './lib/matchRecords.js'
-import { runFoundryIQQuery, runFabricIQQuery, runWebIQQuery } from './agentClient.js'
+import { runFoundryIQQuery, runFabricIQQuery, runWebIQQuery, runSynergyQuery } from './agentClient.js'
 import { signIn, signOut, getActiveAccount, getAccessToken } from './auth.js'
 import { PERSONAS } from './data/personas.js'
 import { accounts, opportunities, leads } from './data/raw/crm.js'
@@ -106,15 +106,17 @@ function RecordCard({ record, missingDomains, live }) {
   const [expanded, setExpanded] = useState(false)
   const primaryStyle = IQ_STYLES[record.groundingSources[0]]
   const isBlocked = missingDomains.length > 0
+  const isFanOut = Boolean(live?.bySource)
 
-  const citations = live ? live.citations : record.citations
-  const answerText = live ? live.text || (live.status === 'streaming' ? 'Thinking…' : '') : record.answerPreview
+  const citations = !isFanOut && live ? live.citations : record.citations
+  const answerText =
+    !isFanOut && live ? live.text || (live.status === 'streaming' ? 'Thinking…' : '') : record.answerPreview
 
   return (
     <div
       className={`rounded-xl border border-slate-800 bg-slate-900/60 p-5 shadow-lg shadow-black/20 transition-colors ${
         isBlocked ? 'opacity-60' : primaryStyle.glow
-      } ${live ? 'ring-1 ring-fuchsia-500/40' : ''}`}
+      } ${live ? 'ring-1 ring-fuchsia-500/40' : ''} ${isFanOut ? 'md:col-span-3' : ''}`}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
@@ -162,6 +164,68 @@ function RecordCard({ record, missingDomains, live }) {
             <span className="font-mono">{missingDomains.join(', ')}</span>
           </span>
         </div>
+      ) : isFanOut ? (
+        <>
+          <p className="mt-3 text-sm text-slate-200">{record.query}</p>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="space-y-3 md:col-span-2">
+              {Object.entries(live.bySource).map(([source, sub]) => {
+                const style = IQ_STYLES[source]
+                const Icon = style.icon
+                return (
+                  <div key={source} className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={`flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-mono uppercase tracking-wide ${style.badge}`}
+                      >
+                        <Icon size={11} strokeWidth={2.5} />
+                        {source}
+                      </span>
+                      <span className="text-[10px] font-mono uppercase tracking-wide text-slate-600">
+                        {sub.status === 'streaming' ? 'Streaming…' : sub.status === 'error' ? 'Error' : 'Done'}
+                      </span>
+                    </div>
+                    {sub.question && <p className="mt-2 text-xs italic text-slate-500">{sub.question}</p>}
+                    {sub.citations.length > 0 && (
+                      <div className="mt-2 space-y-1.5">
+                        {sub.citations.map((citation, i) => (
+                          <div key={i} className="flex items-start gap-1.5 text-[11px] text-slate-500">
+                            <Quote size={11} className="mt-0.5 shrink-0 text-slate-700" />
+                            <span className="font-mono">{citation}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p
+                      className={`mt-2 text-xs leading-relaxed ${
+                        sub.status === 'error' ? 'text-red-400' : 'text-slate-300'
+                      }`}
+                    >
+                      {sub.text || 'Thinking…'}
+                    </p>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="rounded-lg border border-fuchsia-500/30 bg-fuchsia-500/5 p-3 md:col-span-1">
+              <span className="flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wide text-fuchsia-300">
+                <Zap size={12} strokeWidth={2.5} />
+                Synthesized takeaway
+              </span>
+              <p
+                className={`mt-2 text-sm leading-relaxed ${
+                  live.synthesis.status === 'error' ? 'text-red-400' : 'text-slate-200'
+                }`}
+              >
+                {live.synthesis.status === 'pending'
+                  ? 'Waiting for all three sources…'
+                  : live.synthesis.text || 'Synthesizing…'}
+              </p>
+            </div>
+          </div>
+        </>
       ) : (
         <>
           <p className="mt-3 text-sm text-slate-200">{record.query}</p>
@@ -247,6 +311,32 @@ const LIVE_IQ_RECORDS = {
   'web-iq-climate': {
     run: runWebIQQuery,
     citationsForText: extractWebCitations,
+  },
+  // Composite record: one typed question fans out to all 3 live agents
+  // concurrently (each sub-config below), then a 4th call (runSynergyQuery,
+  // a no-tool synthesis agent) combines their answers into one takeaway.
+  'composite-leadgen-focus': {
+    fanOut: [
+      {
+        source: 'Fabric IQ',
+        run: runFabricIQQuery,
+        question: 'Which territories are behind quota this quarter, and by how much?',
+        citationsForText: () => [],
+        doneCitations: ['Fabric IQ semantic model: sales_performance table — live query'],
+      },
+      {
+        source: 'Web IQ',
+        run: runWebIQQuery,
+        question: "What's the storm risk outlook for our Miami-Dade project?",
+        citationsForText: extractWebCitations,
+      },
+      {
+        source: 'Foundry IQ',
+        run: runFoundryIQQuery,
+        question: 'How do we position FieldForge against Procore in a competitive deal?',
+        citationsForText: extractDocCitations,
+      },
+    ],
   },
 }
 
@@ -382,22 +472,121 @@ export default function App() {
     ])
 
     if (liveMode) {
-      const liveRecord = matches.find((r) => LIVE_IQ_RECORDS[r.id])
+      const liveRecord =
+        matches.find((r) => LIVE_IQ_RECORDS[r.id]?.fanOut) || matches.find((r) => LIVE_IQ_RECORDS[r.id])
       if (liveRecord) {
         const config = LIVE_IQ_RECORDS[liveRecord.id]
         setLiveRecordId(liveRecord.id)
-        setLiveResult({ status: 'streaming', text: '', citations: [] })
         const token = account ? await getAccessToken() : null
-        config.run(
-          trimmed,
-          {
-            onText: (text) => setLiveResult({ status: 'streaming', text, citations: config.citationsForText(text) }),
-            onDone: () =>
-              setLiveResult((r) => (r ? { ...r, status: 'done', citations: config.doneCitations ?? r.citations } : r)),
-            onError: (message) => setLiveResult({ status: 'error', text: message, citations: [] }),
-          },
-          token,
-        )
+
+        if (config.fanOut) {
+          setLiveResult({
+            status: 'streaming',
+            bySource: Object.fromEntries(
+              config.fanOut.map((sub) => [
+                sub.source,
+                { status: 'streaming', text: '', citations: [], question: sub.question },
+              ]),
+            ),
+            synthesis: { status: 'pending', text: '' },
+          })
+
+          const runOne = (sub) =>
+            new Promise((resolve) => {
+              let finalText = ''
+              sub.run(
+                sub.question,
+                {
+                  onText: (text) => {
+                    finalText = text
+                    setLiveResult((r) =>
+                      r
+                        ? {
+                            ...r,
+                            bySource: {
+                              ...r.bySource,
+                              [sub.source]: {
+                                ...r.bySource[sub.source],
+                                status: 'streaming',
+                                text,
+                                citations: sub.citationsForText(text),
+                              },
+                            },
+                          }
+                        : r,
+                    )
+                  },
+                  onDone: () => {
+                    setLiveResult((r) =>
+                      r
+                        ? {
+                            ...r,
+                            bySource: {
+                              ...r.bySource,
+                              [sub.source]: {
+                                ...r.bySource[sub.source],
+                                status: 'done',
+                                citations: sub.doneCitations ?? r.bySource[sub.source].citations,
+                              },
+                            },
+                          }
+                        : r,
+                    )
+                    resolve({ source: sub.source, text: finalText })
+                  },
+                  onError: (message) => {
+                    setLiveResult((r) =>
+                      r
+                        ? {
+                            ...r,
+                            bySource: {
+                              ...r.bySource,
+                              [sub.source]: { ...r.bySource[sub.source], status: 'error', text: message, citations: [] },
+                            },
+                          }
+                        : r,
+                    )
+                    resolve({ source: sub.source, text: `(${sub.source} failed: ${message})` })
+                  },
+                },
+                token,
+              )
+            })
+
+          const results = await Promise.all(config.fanOut.map(runOne))
+
+          setLiveResult((r) => (r ? { ...r, status: 'done', synthesis: { status: 'streaming', text: '' } } : r))
+
+          const synthesisInput = [
+            'Synthesize these three grounded answers into one lead-generation takeaway:',
+            ...results.map((res) => `${res.source}: ${res.text}`),
+          ].join('\n\n')
+
+          runSynergyQuery(
+            synthesisInput,
+            {
+              onText: (text) => setLiveResult((r) => (r ? { ...r, synthesis: { status: 'streaming', text } } : r)),
+              onDone: () =>
+                setLiveResult((r) => (r ? { ...r, synthesis: { ...r.synthesis, status: 'done' } } : r)),
+              onError: (message) =>
+                setLiveResult((r) => (r ? { ...r, synthesis: { status: 'error', text: message } } : r)),
+            },
+            token,
+          )
+        } else {
+          setLiveResult({ status: 'streaming', text: '', citations: [] })
+          config.run(
+            trimmed,
+            {
+              onText: (text) =>
+                setLiveResult({ status: 'streaming', text, citations: config.citationsForText(text) }),
+              onDone: () =>
+                setLiveResult((r) => (r ? { ...r, status: 'done', citations: config.doneCitations ?? r.citations } : r)),
+              onError: (message) => setLiveResult({ status: 'error', text: message, citations: [] }),
+            },
+            token,
+          )
+        }
       } else {
         setLiveRecordId(null)
         setLiveResult(null)
@@ -508,20 +697,23 @@ export default function App() {
           <div>
             <div className="mb-6">
               <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  onKeyDown={handleQueryKeyDown}
-                  placeholder="Ask a question, e.g. &ldquo;Is Coastal Grade & Pave at renewal risk?&rdquo;"
-                  className="flex-1 rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:border-slate-600 focus:outline-none"
-                />
+                {liveMode && (
+                  <input
+                    type="text"
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    onKeyDown={handleQueryKeyDown}
+                    placeholder="Ask a question, e.g. &ldquo;Is Coastal Grade & Pave at renewal risk?&rdquo;"
+                    className="flex-1 rounded-lg border border-slate-800 bg-slate-900/60 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:border-slate-600 focus:outline-none"
+                  />
+                )}
                 <button
                   onClick={() => {
                     if (liveMode) {
                       setLiveMode(false)
                       setLiveRecordId(null)
                       setLiveResult(null)
+                      setQuestion('')
                       return
                     }
                     if (!account) {
@@ -553,6 +745,11 @@ export default function App() {
                   </button>
                 )}
               </div>
+              {!liveMode && (
+                <p className="mt-2 text-[11px] text-slate-600">
+                  Turn on Live to ask a question against the real deployed agents.
+                </p>
+              )}
               {isFiltered && (
                 <p className="mt-2 text-xs text-slate-500">
                   {matches.length > 0
@@ -565,7 +762,10 @@ export default function App() {
                 <p className="mt-1 text-[11px] text-slate-600">
                   Live mode calls real, deployed agents — Foundry IQ (Azure AI Search) for Product Docs, Fabric
                   IQ (a live semantic model) for Sales Performance, and Web IQ (live web search grounding) for
-                  Climate/Disaster Risk — everything else on this tab still uses the Stage 2 mock matcher.
+                  Climate/Disaster Risk — everything else on this tab still uses the Stage 2 mock matcher. Try
+                  &ldquo;Where should we focus new lead generation — factoring in territory quota performance,
+                  regional storm risk, and our competitive edge against Procore?&rdquo; to see all 3 IQs fan out
+                  from one query, then a 4th live agent synthesize their answers into one takeaway.
                 </p>
               )}
             </div>

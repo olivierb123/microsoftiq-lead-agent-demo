@@ -85,5 +85,26 @@ services:
         protocols:
             - protocol: responses
               version: 2.0.0
+    synergy-agent:
+        project: .
+        host: azure.ai.agent
+        language: python
+        uses:
+            - ai-project
+        codeConfiguration:
+            dependencyResolution: remote_build
+            entryPoint: synergy_server.py
+            runtime: python_3_13
+        container:
+            resources:
+                cpu: "0.5"
+                memory: 1Gi
+        env:
+            AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
+        kind: hosted
+        name: synergy-agent
+        protocols:
+            - protocol: responses
+              version: 2.0.0
 infra:
     provider: microsoft.foundry

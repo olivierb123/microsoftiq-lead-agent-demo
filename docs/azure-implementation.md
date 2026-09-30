@@ -1,6 +1,6 @@
 # Real Azure implementation — Foundry IQ, Fabric IQ & Web IQ
 
-Stages 1–3 proved the *shape* of grounding — data mapped to the right IQ product, normalized into citable records, access-controlled and audited — entirely with mock data and a hand-written keyword matcher. Stage 4 made one of those four IQ products real: an actual deployed agent, grounded on real Azure infrastructure, answering real questions with real citations. Stage 5 made a second one real: Fabric IQ, scoped to the Sales Performance domain, grounded on an actual Fabric semantic model. Stage 6 made a third real: Web IQ, scoped to the Climate/Disaster Risk domain, grounded on Microsoft's real, live Web IQ web-search API. Work IQ, the rest of Fabric IQ's domains (CRM, Telemetry, Support Cases, and the cross-domain composite), and Web IQ's Permits domain remain documented here architecturally but not built.
+Stages 1–3 proved the *shape* of grounding — data mapped to the right IQ product, normalized into citable records, access-controlled and audited — entirely with mock data and a hand-written keyword matcher. Stage 4 made one of those four IQ products real: an actual deployed agent, grounded on real Azure infrastructure, answering real questions with real citations. Stage 5 made a second one real: Fabric IQ, scoped to the Sales Performance domain, grounded on an actual Fabric semantic model. Stage 6 made a third real: Web IQ, scoped to the Climate/Disaster Risk domain, grounded on Microsoft's real, live Web IQ web-search API. Stage 7 shows what those three real agents are worth *together*: one typed question fans out to all three live agents concurrently, and a fourth live agent (no tools — pure synthesis) combines their three answers into one attributed takeaway, rather than the demo ever hand-writing what a "combined" answer would say. Work IQ, the rest of Fabric IQ's domains (CRM, Telemetry, Support Cases, and the cross-domain composite), and Web IQ's Permits domain remain documented here architecturally but not built.
 
 ## Architecture
 
@@ -16,6 +16,7 @@ flowchart TB
     foundryIQ["foundryiq-docs-agent<br/>ResponsesHostServer"]
     webIQ["webiq-climate-agent<br/>ResponsesHostServer"]
     fabricAgent["fabriciq-sales-agent<br/>ResponsesHostServer<br/>custom function tool: query_sales_performance"]
+    synergy["synergy-agent<br/>ResponsesHostServer<br/>no tools — pure synthesis"]
   end
 
   subgraph unused["Foundry prompt agent — abandoned, kept for reference"]
@@ -25,6 +26,7 @@ flowchart TB
   proxy -->|"/api/foundry-iq/responses"| foundryIQ
   proxy -->|"/api/web-iq/responses"| webIQ
   proxy -->|"/api/fabric-iq/responses"| fabricAgent
+  proxy -->|"/api/synergy/responses<br/>(after the other 3 finish)"| synergy
 
   foundryIQ --> search[("Azure AI Search<br/>product-docs index")]
   webIQ --> webiqapi[("Web IQ API<br/>webiq.microsoft.ai")]
@@ -110,6 +112,16 @@ A fourth Foundry Hosted Agent, `webiq-climate-agent`, sharing the same Foundry p
 - **The product's own documentation pages were unreliable; the OpenAPI spec was the only authoritative source.** Web IQ's human-readable API-reference and Authentication doc pages returned marketing/FAQ content instead of technical detail when fetched (the product is in limited enterprise access). The real, structured contract — endpoints, auth schemes, request/response field names — only came from the OpenAPI JSON spec at `https://webiq.microsoft.ai/documentation/openapi.json`, linked from `https://webiq.microsoft.ai/llms.txt`.
 - **Some documented response fields (`domain`, `lastUpdatedAt`) aren't always present.** A raw test call against the live API returned results with `title`/`url`/`content`/`crawledAt` but no `domain` or `lastUpdatedAt` on every result, despite both being in the OpenAPI schema. `webiq_tools.py` derives `domain` from the URL's host as a fallback and falls back to `crawledAt` for the date, so citations stay populated either way.
 
+## What's built: cross-IQ synergy — fan-out + live synthesis
+
+A fourth Foundry Hosted Agent, `synergy-agent` (`agent/synergy_agent.py`, `agent/synergy_server.py`), sharing the same Foundry project and model deployment as the other three. Unlike the other three, it has **no tools at all** — `agent_framework.Agent` accepts `tools=None` as a fully valid construction, and this agent's only job is to read three already-grounded, already-cited answers handed to it inline in the prompt and synthesize them into one short, attributed takeaway. It never calls out to any data source itself; its only "grounding" is the text of the other three agents' real answers.
+
+**The demo question**: "Where should we focus new lead generation — factoring in territory quota performance, regional storm risk, and our competitive edge against Procore?" — deliberately built so no single IQ product can answer it alone: quota performance lives in Fabric IQ's sales semantic model, storm risk in Web IQ's live hazard search, and competitive positioning in Foundry IQ's indexed docs.
+
+**Execution flow** (`src/App.jsx`): the composite mock record `composite-leadgen-focus` (`src/data/mockRecords.js`) carries a `fanOut` config of three sub-questions, one per real agent, reusing each agent's already-proven canonical question. When Live mode matches this record, all three agent calls run **concurrently** (`Promise.all`, not sequential awaits) — each streams into its own slice of a `bySource` state map. Once all three finish (success or error), a fourth call fires to `synergy-agent` with an `input` string built from each source's final text, and its streamed response renders as a separate "Synthesized takeaway" panel. The existing single-domain live queries (Fabric IQ, Foundry IQ, Web IQ alone) are unaffected — fan-out is additive, selected only when the matched record declares a `fanOut` config.
+
+**Why a live synthesis call instead of hardcoded prose**: consistent with this project's practice of only ever showing things that are actually live (see the MSAL and per-agent sections above) — a canned "combined takeaway" string would misrepresent what the demo is proving, which is that the value of combining IQ products holds up even when the combining step itself is a real model call with no special-cased answer.
+
 ## What's built: real user sign-in (MSAL)
 
 The **"Live"** toggle no longer runs every request as whichever developer happens to have an `az login` session open — the browser itself authenticates a real Entra ID user via MSAL (`src/auth.js`, `@azure/msal-browser`), and that user's own access token is what the header sign-in state reflects and what the proxy forwards. A new SPA app registration backs this (public client, no secret — PKCE); clicking **"Sign in"** triggers `signIn()`, showing the signed-in account's name and a **"Sign out"** button once complete. Turning on **Live** mode calls `getAccessToken()` first and only proceeds if sign-in succeeds. `vite.config.js`'s proxy forwards an incoming `Authorization` header as-is when present (see `iqAgentProxyPlugin` in the Architecture section above); with no one signed in, it falls back to minting a token from `DefaultAzureCredential`, so `npm run dev` still works standalone.
@@ -139,3 +151,5 @@ The Fabric IQ agent's `query_sales_performance` tool was first smoke-tested as a
 Real sign-in (MSAL) was verified by signing in through the browser's "Sign in" button, confirming the "Live" toggle only activates after a successful redirect sign-in, and confirming (via browser devtools) that the request reaching `vite.config.js`'s proxy carries the signed-in user's own bearer token rather than one minted from the developer's `az login` session.
 
 The Web IQ climate agent's underlying tool was smoke-tested with a raw `curl` call against the live `/search/web` endpoint before any agent code was written, confirming the key and contract both work (real NOAA hurricane-advisory results for a Miami-Dade storm-risk query). The deployed agent itself was then smoke-tested via `azd ai agent invoke webiq-climate-agent` with "What's the storm risk outlook for our Miami-Dade project?" and verified end-to-end through the browser via the "Live: Web IQ" toggle on the Climate/Disaster Risk record.
+
+The `synergy-agent`'s no-tool synthesis was first verified locally: `agent/synergy_agent.py`/`synergy_server.py` run through the real `ResponsesHostServer` HTTP endpoint (`POST http://localhost:8088/responses`) with a canned 3-source input (quota, storm risk, competitive positioning) produced a genuine, correctly-attributed takeaway grounded only in that inline text — confirming a tool-less `Agent` construction (`tools=None`) is valid before any cloud deployment was made.

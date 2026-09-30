@@ -146,4 +146,22 @@ export const mockRecords = [
     answerPreview:
       'Yes — Apex just filed a $640K commercial remodel permit in Austin, a strong signal the Field Ops Expansion upsell ($76K, already in Negotiation) is well-timed. One flag: the project sits in a moderate wildfire-risk zone, worth a mention in the timeline/insurance conversation, not a blocker.',
   },
+  {
+    id: 'composite-leadgen-focus',
+    domain: 'Cross-source: lead generation strategy',
+    groundingSources: ['Fabric IQ', 'Web IQ', 'Foundry IQ'],
+    sourceDomains: ['Sales Performance', 'Climate / Disaster Risk', 'Product Docs'],
+    confidence: 'High',
+    query:
+      'Where should we focus new lead generation — factoring in territory quota performance, regional storm risk, and our competitive edge against Procore?',
+    reasoning:
+      "No single IQ can answer this alone — quota performance lives in the sales semantic model, storm risk lives in public hazard data, and competitive positioning lives in sales enablement docs. Combining all three in one query turns three separate lookups into an actual resource-allocation call: which territory needs the lead-gen push, whether real-world risk changes the calculus, and how to win once those leads are in the pipeline.",
+    citations: [
+      'Power BI semantic model: Sales Performance — FY26 Q1 rows (territory × month)',
+      'NOAA National Hurricane Center — risk record REG-FL-MIAMIDADE (High, as of 2026-09-10)',
+      'Foundry IQ index: DOC-2 — Competitive Battlecard: FieldForge vs. Procore Field Productivity (updated 2026-08-20)',
+    ],
+    answerPreview:
+      "South is furthest behind quota this quarter (Aug -32.2%), which makes it the clearest lead-gen target — but Miami-Dade carries a High storm-risk rating right now, so push generation toward inland South accounts first. Lead with FieldForge's real-time crew dispatch and permit-triggered lead capture against Procore once those leads are qualified.",
+  },
 ]

@@ -111,3 +111,8 @@ export function runFabricIQQuery(question, callbacks = {}, accessToken = null) {
 export function runWebIQQuery(question, callbacks = {}, accessToken = null) {
   return runIQQuery('/api/web-iq/responses', question, callbacks, accessToken)
 }
+
+/** Run one turn of the Synergy agent (no tools — synthesizes 3 other agents' answers, given inline in `question`, into one takeaway). */
+export function runSynergyQuery(question, callbacks = {}, accessToken = null) {
+  return runIQQuery('/api/synergy/responses', question, callbacks, accessToken)
+}
