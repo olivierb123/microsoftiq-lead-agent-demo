@@ -2,68 +2,39 @@ from __future__ import annotations
 
 import os
 
-import requests
-from azure.identity import DefaultAzureCredential
+from azure.identity import ClientSecretCredential
+from mcp import ClientSession
+from mcp.client.streamable_http import streamablehttp_client
 
-POWERBI_TOKEN_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
-TABLE_NAME = "sales_performance"
+FABRIC_SCOPE = "https://api.fabric.microsoft.com/.default"
 
-WORKSPACE_ID = os.environ["AZURE_POWERBI_WORKSPACE_ID"]
-DATASET_ID = os.environ["AZURE_POWERBI_DATASET_ID"]
+FABRIC_TENANT_ID = os.environ["FABRIC_TENANT_ID"]
+FABRIC_CLIENT_ID = os.environ["FABRIC_CLIENT_ID"]
+FABRIC_CLIENT_SECRET = os.environ["FABRIC_CLIENT_SECRET"]
+FABRIC_WORKSPACE_ID = os.environ["FABRIC_WORKSPACE_ID"]
+FABRIC_DATA_AGENT_ID = os.environ["FABRIC_DATA_AGENT_ID"]
 
-# DefaultAzureCredential resolves to the deployed agent's own Instance Identity
-# Principal ID. An earlier attempt at this got a flat 401 here, but that was
-# against a Direct Lake (Lakehouse-backed) semantic model — its OneLake/
-# Lakehouse ACL layer was the actual blocker, not the identity type. Once the
-# dataset was rebuilt as a plain Import-mode semantic model (see docs/
-# azure-implementation.md), the same identity authenticates fine with just
-# workspace Contributor — no separate service principal/client secret needed.
-_credential = DefaultAzureCredential()
+MCP_URL = (
+    f"https://api.fabric.microsoft.com/v1/mcp/workspaces/{FABRIC_WORKSPACE_ID}"
+    f"/dataagents/{FABRIC_DATA_AGENT_ID}/agent"
+)
 
-
-def _dax_string_literal(value: str) -> str:
-    return '"' + value.replace('"', '""') + '"'
+_credential = ClientSecretCredential(FABRIC_TENANT_ID, FABRIC_CLIENT_ID, FABRIC_CLIENT_SECRET)
 
 
-def _build_dax_query(territory: str | None, month: str | None) -> str:
-    conditions = []
-    if territory:
-        conditions.append(f"{TABLE_NAME}[territory] = {_dax_string_literal(territory)}")
-    if month:
-        conditions.append(f"{TABLE_NAME}[month] = {_dax_string_literal(month)}")
+async def query_sales_performance(question: str) -> str:
+    """Query FieldForge's live Fabric Data agent (Sales Performance semantic
+    model) with a natural-language question. Calls the Fabric Data agent's MCP
+    endpoint directly using a service-principal credential — not a mock or
+    cached dataset. Returns the agent's natural-language answer."""
+    token = _credential.get_token(FABRIC_SCOPE)
+    headers = {"Authorization": f"Bearer {token.token}"}
 
-    if not conditions:
-        return f"EVALUATE {TABLE_NAME}"
-
-    filter_expr = " && ".join(conditions)
-    return f"EVALUATE FILTER({TABLE_NAME}, {filter_expr})"
-
-
-def _strip_table_prefix(column_name: str) -> str:
-    return column_name.split("[", 1)[1].rstrip("]") if "[" in column_name else column_name
-
-
-def query_sales_performance(territory: str | None = None, month: str | None = None) -> list[dict]:
-    """Query the Fabric IQ Sales Performance semantic model, optionally filtered
-    by territory and/or month. Returns matching rows (territory, segment, seller,
-    month, revenue, quota, variancePct) queried live from the live Fabric
-    semantic model — not a mock or cached dataset."""
-    token = _credential.get_token(POWERBI_TOKEN_SCOPE).token
-    dax_query = _build_dax_query(territory, month)
-
-    response = requests.post(
-        f"https://api.powerbi.com/v1.0/myorg/groups/{WORKSPACE_ID}/datasets/{DATASET_ID}/executeQueries",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "queries": [{"query": dax_query}],
-            "serializerSettings": {"includeNulls": True},
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-
-    rows = response.json()["results"][0]["tables"][0]["rows"]
-    return [{_strip_table_prefix(k): v for k, v in row.items()} for row in rows]
+    async with streamablehttp_client(MCP_URL, headers=headers) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+            tool = tools.tools[0]
+            question_arg = next(iter(tool.inputSchema["properties"]))
+            result = await session.call_tool(tool.name, {question_arg: question})
+            return "\n".join(block.text for block in result.content if block.type == "text")

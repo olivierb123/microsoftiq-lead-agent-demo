@@ -1,8 +1,9 @@
-import { useState } from 'react'
-import { Database, Users, Globe, FileText, ChevronDown, ChevronUp, Quote, Lock, Zap } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Database, Users, Globe, FileText, ChevronDown, ChevronUp, Quote, Lock, Zap, LogIn, LogOut } from 'lucide-react'
 import { mockRecords } from './data/mockRecords.js'
 import { matchRecords } from './lib/matchRecords.js'
 import { runFoundryIQQuery, runFabricIQQuery, runWebIQQuery } from './agentClient.js'
+import { signIn, signOut, getActiveAccount, getAccessToken } from './auth.js'
 import { PERSONAS } from './data/personas.js'
 import { accounts, opportunities, leads } from './data/raw/crm.js'
 import { rows as salesPerformanceRows } from './data/raw/salesPerformance.js'
@@ -340,6 +341,22 @@ export default function App() {
   const [liveMode, setLiveMode] = useState(false)
   const [liveRecordId, setLiveRecordId] = useState(null)
   const [liveResult, setLiveResult] = useState(null)
+  const [account, setAccount] = useState(null)
+
+  useEffect(() => {
+    getActiveAccount().then(setAccount)
+  }, [])
+
+  // signIn()/signOut() navigate the whole page away (redirect flow) and
+  // never resolve inline — the mount effect's getActiveAccount() picks up
+  // the result after the page reloads post-redirect.
+  const handleSignIn = () => {
+    signIn()
+  }
+
+  const handleSignOut = () => {
+    signOut()
+  }
 
   const isFiltered = question.trim().length > 0
   const matches = isFiltered ? matchRecords(mockRecords, question) : mockRecords
@@ -347,7 +364,7 @@ export default function App() {
   const missingDomainsFor = (record) =>
     record.sourceDomains.filter((d) => !activePersona.allowedDomains.includes(d))
 
-  const handleQueryKeyDown = (e) => {
+  const handleQueryKeyDown = async (e) => {
     if (e.key !== 'Enter') return
     const trimmed = question.trim()
     if (!trimmed) return
@@ -370,12 +387,17 @@ export default function App() {
         const config = LIVE_IQ_RECORDS[liveRecord.id]
         setLiveRecordId(liveRecord.id)
         setLiveResult({ status: 'streaming', text: '', citations: [] })
-        config.run(trimmed, {
-          onText: (text) => setLiveResult({ status: 'streaming', text, citations: config.citationsForText(text) }),
-          onDone: () =>
-            setLiveResult((r) => (r ? { ...r, status: 'done', citations: config.doneCitations ?? r.citations } : r)),
-          onError: (message) => setLiveResult({ status: 'error', text: message, citations: [] }),
-        })
+        const token = account ? await getAccessToken() : null
+        config.run(
+          trimmed,
+          {
+            onText: (text) => setLiveResult({ status: 'streaming', text, citations: config.citationsForText(text) }),
+            onDone: () =>
+              setLiveResult((r) => (r ? { ...r, status: 'done', citations: config.doneCitations ?? r.citations } : r)),
+            onError: (message) => setLiveResult({ status: 'error', text: message, citations: [] }),
+          },
+          token,
+        )
       } else {
         setLiveRecordId(null)
         setLiveResult(null)
@@ -430,23 +452,48 @@ export default function App() {
           </button>
         </div>
 
-        <div className="mt-3 flex items-center gap-2">
-          <span className="text-[11px] font-mono uppercase tracking-wider text-slate-600">
-            Viewing as
-          </span>
-          {PERSONAS.map((persona) => (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono uppercase tracking-wider text-slate-600">
+              Viewing as
+            </span>
+            {PERSONAS.map((persona) => (
+              <button
+                key={persona.id}
+                onClick={() => setActivePersona(persona)}
+                className={`rounded-lg border px-3 py-1 text-xs font-mono uppercase tracking-wide transition-colors ${
+                  activePersona.id === persona.id
+                    ? 'border-slate-600 bg-slate-800 text-slate-100'
+                    : 'border-slate-800 text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                {persona.label}
+              </button>
+            ))}
+          </div>
+
+          {account ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono text-slate-500">
+                Signed in: {account.username}
+              </span>
+              <button
+                onClick={handleSignOut}
+                className="flex items-center gap-1.5 rounded-lg border border-slate-800 px-3 py-1 text-xs font-mono uppercase tracking-wide text-slate-500 transition-colors hover:border-slate-700 hover:text-slate-300"
+              >
+                <LogOut size={12} strokeWidth={2.5} />
+                Sign out
+              </button>
+            </div>
+          ) : (
             <button
-              key={persona.id}
-              onClick={() => setActivePersona(persona)}
-              className={`rounded-lg border px-3 py-1 text-xs font-mono uppercase tracking-wide transition-colors ${
-                activePersona.id === persona.id
-                  ? 'border-slate-600 bg-slate-800 text-slate-100'
-                  : 'border-slate-800 text-slate-500 hover:text-slate-300'
-              }`}
+              onClick={handleSignIn}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-800 px-3 py-1 text-xs font-mono uppercase tracking-wide text-slate-500 transition-colors hover:border-slate-700 hover:text-slate-300"
             >
-              {persona.label}
+              <LogIn size={12} strokeWidth={2.5} />
+              Sign in
             </button>
-          ))}
+          )}
         </div>
       </header>
 
@@ -471,7 +518,17 @@ export default function App() {
                 />
                 <button
                   onClick={() => {
-                    setLiveMode((v) => !v)
+                    if (liveMode) {
+                      setLiveMode(false)
+                      setLiveRecordId(null)
+                      setLiveResult(null)
+                      return
+                    }
+                    if (!account) {
+                      handleSignIn()
+                      return
+                    }
+                    setLiveMode(true)
                     setLiveRecordId(null)
                     setLiveResult(null)
                   }}

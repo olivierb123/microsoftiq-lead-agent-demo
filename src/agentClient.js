@@ -44,14 +44,22 @@ async function* parseSSEStream(response) {
  *     text so far each time new text arrives
  *   - onDone(): called when the run completes successfully
  *   - onError(message): called on failure
+ *
+ * accessToken: the signed-in user's own bearer token (from src/auth.js). When
+ * present, the dev proxy forwards it as-is instead of minting its own token,
+ * so agent tool calls that authenticate OBO (Fabric IQ) run as the real
+ * browser user rather than the developer's local `az login` session.
  */
-async function runIQQuery(proxyPath, question, callbacks = {}) {
+async function runIQQuery(proxyPath, question, callbacks = {}, accessToken = null) {
   const { onText = () => {}, onDone = () => {}, onError = () => {} } = callbacks
 
   try {
+    const headers = { 'Content-Type': 'application/json' }
+    if (accessToken) headers.Authorization = `Bearer ${accessToken}`
+
     const response = await fetch(proxyPath, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ input: question, stream: true }),
     })
 
@@ -77,6 +85,9 @@ async function runIQQuery(proxyPath, question, callbacks = {}) {
         case 'response.incomplete':
           onError(event.response?.incomplete_details?.reason || 'Response incomplete')
           break
+        case 'response.failed':
+          onError(event.response?.error?.message || 'Response failed')
+          break
         default:
           break
       }
@@ -87,16 +98,16 @@ async function runIQQuery(proxyPath, question, callbacks = {}) {
 }
 
 /** Run one turn of the Foundry IQ docs agent (Azure AI Search grounded). */
-export function runFoundryIQQuery(question, callbacks = {}) {
-  return runIQQuery('/api/foundry-iq/responses', question, callbacks)
+export function runFoundryIQQuery(question, callbacks = {}, accessToken = null) {
+  return runIQQuery('/api/foundry-iq/responses', question, callbacks, accessToken)
 }
 
 /** Run one turn of the Fabric IQ sales performance agent (live semantic model grounded). */
-export function runFabricIQQuery(question, callbacks = {}) {
-  return runIQQuery('/api/fabric-iq/responses', question, callbacks)
+export function runFabricIQQuery(question, callbacks = {}, accessToken = null) {
+  return runIQQuery('/api/fabric-iq/responses', question, callbacks, accessToken)
 }
 
 /** Run one turn of the Web IQ climate/disaster-risk agent (live web search grounded). */
-export function runWebIQQuery(question, callbacks = {}) {
-  return runIQQuery('/api/web-iq/responses', question, callbacks)
+export function runWebIQQuery(question, callbacks = {}, accessToken = null) {
+  return runIQQuery('/api/web-iq/responses', question, callbacks, accessToken)
 }

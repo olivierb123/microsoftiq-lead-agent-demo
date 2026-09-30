@@ -53,8 +53,11 @@ services:
                 memory: 1Gi
         env:
             AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
-            AZURE_POWERBI_WORKSPACE_ID: ${AZURE_POWERBI_WORKSPACE_ID}
-            AZURE_POWERBI_DATASET_ID: ${AZURE_POWERBI_DATASET_ID}
+            FABRIC_TENANT_ID: ${FABRIC_TENANT_ID}
+            FABRIC_CLIENT_ID: ${FABRIC_CLIENT_ID}
+            FABRIC_CLIENT_SECRET: ${FABRIC_CLIENT_SECRET}
+            FABRIC_WORKSPACE_ID: ${FABRIC_WORKSPACE_ID}
+            FABRIC_DATA_AGENT_ID: ${FABRIC_DATA_AGENT_ID}
         kind: hosted
         name: fabriciq-sales-agent
         protocols:

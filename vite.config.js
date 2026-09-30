@@ -5,19 +5,24 @@ import { DefaultAzureCredential } from '@azure/identity'
 
 const TOKEN_SCOPE = 'https://ai.azure.com/.default'
 
-// Dev-only proxy: mints an AAD token via the developer's own `az login`
-// session (DefaultAzureCredential, Node-side — never bundled to the client)
-// and forwards to a deployed Foundry Hosted Agent. This project has no
-// public hosting yet (Stages 1-3 are npm-run-dev-and-commit only), so a
-// local proxy is enough — no Azure Function/service-principal needed, unlike
-// lead-agent-demo's publicly-hosted Static Web App. Shared by both the
-// Foundry IQ docs agent and the Fabric IQ sales agent — same Responses-
-// protocol endpoint shape, same token scope, just a different upstream URL.
+// Dev-only proxy: forwards to a deployed Foundry Hosted Agent. If the
+// incoming browser request already carries an Authorization header (a real
+// signed-in user's own token, from src/auth.js), that token is passed through
+// as-is — so agent tool calls that authenticate OBO (Fabric IQ) run as the
+// true browser user. Otherwise, falls back to minting a token via the
+// developer's own `az login` session (DefaultAzureCredential, Node-side —
+// never bundled to the client), so `npm run dev` still works standalone with
+// no sign-in required. This project has no public hosting yet (Stages 1-3
+// are npm-run-dev-and-commit only), so a local proxy is enough — no Azure
+// Function/service-principal needed, unlike lead-agent-demo's publicly-hosted
+// Static Web App. Shared by the Foundry IQ docs agent, Fabric IQ sales agent,
+// and Web IQ climate agent — same Responses-protocol endpoint shape, same
+// token scope, just a different upstream URL.
 function iqAgentProxyPlugin(name, routePath, agentUrl) {
   let cachedToken = null
   const credential = new DefaultAzureCredential()
 
-  async function getAccessToken() {
+  async function mintAccessToken() {
     if (cachedToken && cachedToken.expiresOnTimestamp - Date.now() > 60_000) {
       return cachedToken.token
     }
@@ -41,7 +46,8 @@ function iqAgentProxyPlugin(name, routePath, agentUrl) {
         }
 
         try {
-          const token = await getAccessToken()
+          const incomingAuth = req.headers['authorization']
+          const token = incomingAuth ? incomingAuth.replace(/^Bearer\s+/i, '') : await mintAccessToken()
           const chunks = []
           for await (const chunk of req) chunks.push(chunk)
           const body = Buffer.concat(chunks)
@@ -88,5 +94,11 @@ export default defineConfig(({ mode }) => {
       iqAgentProxyPlugin('fabric-iq-proxy', '/api/fabric-iq/responses', env.FABRIC_IQ_AGENT_URL),
       iqAgentProxyPlugin('web-iq-proxy', '/api/web-iq/responses', env.WEBIQ_AGENT_URL),
     ],
+    // Pinned to match the redirect URI registered on the MSAL SPA app
+    // registration (src/auth.js) — a different port would break sign-in.
+    server: {
+      port: 5175,
+      strictPort: true,
+    },
   }
 })
